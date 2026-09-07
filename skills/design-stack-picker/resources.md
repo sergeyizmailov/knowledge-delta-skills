@@ -245,7 +245,7 @@ Pull patterns, not decoration: layout, hierarchy, spacing, density, mobile behav
 - ⭐ **Shots.so** — https://shots.so · **Device Shots** — https://deviceshots.com (free device mockups) · **Mockuuups Studio** — https://mockuuups.studio (large realistic library, Figma/desktop workflow) · **Placeit** — https://placeit.net (broad marketing/product mockups; ecommerce/POD, social assets).
 
 ### Quality checks
-- **PageSpeed Insights** — https://pagespeed.web.dev (performance, LCP/CLS/image) · **WebPageTest** — https://www.webpagetest.org (waterfalls, filmstrips) · **WAVE** — https://wave.webaim.org (a11y) · **Contrast Grid** — https://contrast-grid.eightshapes.com (text/bg contrast combos) · **Responsively** — https://responsively.app (multi-device visual checks).
+- **PageSpeed Insights** — https://pagespeed.web.dev (performance, LCP/CLS/image) · **WebPageTest** — https://www.webpagetest.org (waterfalls, filmstrips) · **WAVE** — https://wave.webaim.org (a11y) · **WebAIM Contrast Checker** — https://webaim.org/resources/contrastchecker/ (text/bg contrast) · **Leonardo** — https://leonardocolor.io (generate accessible color scales) · **Responsively** — https://responsively.app (multi-device visual checks).
 
 **Workflow:** pick 3-5 references of the same page type, extract concrete patterns, implement with the project's components/tokens. Never clone a reference wholesale.
 
