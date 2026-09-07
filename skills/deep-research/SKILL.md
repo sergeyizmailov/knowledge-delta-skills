@@ -5,39 +5,56 @@ description: Use when asked to research deeply, compare options or vendors, fact
 
 # Deep Research
 
-Primary sources over blog rewrites. Output is auditable: every claim traceable, every gap named.
+Verified: 2026-09-08
+
+Primary sources over blog rewrites. Every claim traceable, every gap named. "Could not find X" is a valid result — never fabricate to close one.
 
 ## Workflow
 
-Scope (question, audience, depth, budget) → outline (items, fields, success criteria) → gather tiers 1→4, never start at 4 → verify per protocol → date-check staleness and version → apply stop criteria → compile output format.
+Scope (question, audience, depth, query budget) → outline (items, fields, success criteria) → pick retrieval tool → gather tiers 1→4, never start at 4 → verify per protocol → date-check staleness/version → apply stop criteria → compile output format.
+
+## Retrieval tool
+
+| Need | Use |
+|---|---|
+| Library/API/framework docs | Docs-index tool (e.g. Context7-style MCP) — version-scoped, current, far fewer queries |
+| Fetch returns empty/JS shell | Headless-browser fetch — plain HTTP misses client-rendered content |
+| Many sources at once | Bulk-crawler — one dispatch vs. N fetches, spares budget |
+| 403/challenge on a known-live site | Retry browser-capable before writing it off; fingerprinting blocks curl, not the site |
+| Everything else | Web search + `search-techniques.md` |
+
+## Query budget
+
+Search tools are capped per session and the cap is shared across parallel subagents, not per-agent. Divide it up front, give each agent a fixed quota in its prompt, prefer few targeted queries to many broad ones. Budget thin → finish sequentially rather than adding agents.
 
 ## Source Tiers
 
 | Tier | Sources |
 |---|---|
 | 1 Primary | Specs (RFC, W3C, WHATWG), source code, official docs, original papers, changelogs |
-| 2 Secondary | Peer-reviewed papers, vendor threat intel (Unit42, Mandiant, Sekoia), audits, MITRE ATT&CK |
+| 2 Secondary | Peer-reviewed papers, vendor threat intel, audits, MITRE ATT&CK |
 | 3 Tertiary | Technical books, curated guides (awesome-*, OWASP Cheat Sheets), conference talks |
 | 4 Community | Stack Overflow, Reddit, HN, dev.to/Medium — leads only, never ground truth |
-| 5 Avoid | SEO farms (GeeksforGeeks), AI slop, "Top 10 X in 2026", marketing blogs |
+| 5 Avoid | SEO farms, AI slop, "Top 10 X in <year>", marketing blogs |
 
-Skip a source: no author, no dates/versions, "Updated for 2026!" over 2021 content, every question resolves to the same product.
+Skip a source: no author, no dates/versions, "Updated for <year>!" over stale content, every question resolves to the same product.
 
 ## Verification
 
 | Claim type | Required evidence |
 |---|---|
-| One canonical authority (RFC, spec, vendor's own docs, project source) | 1 primary source |
-| High-impact: security, cost, breaking change, "recommended approach", perf numbers | 2+ independent, ≥1 Tier 1–2; if only 1 → Tentative |
+| One canonical authority (spec, vendor's own docs, project source) | 1 primary source |
+| High-impact: security, cost, breaking change, "recommended approach", perf numbers | 2+ independent, ≥1 Tier 1–2; only 1 → mark Tentative |
 | Sources conflict | Present both, name the conflict, never silently pick |
 | Routine metadata (release date, version, port) | 1 primary; recheck if it drives a decision |
 | Community "best practice" | Trace to origin; single blog post → opinion, not fact |
+| Any URL cited in output | Fetch it this session; dead or redirected → cite the resolved target or drop it |
 
 Trace blog claims to the paper/RFC/commit behind them; match the version under discussion; run load-bearing snippets.
 
 ## Volatile by Default
 
-Leaderboards (LMArena, HF Open LLM, MTEB), pricing/rate limits, annual surveys, aggregator front pages, live dashboards/threat feeds (URLhaus, abuse.ch), GitHub trending, LLM model names/context windows/cutoffs. Cite with access date; cross-check high-impact claims against a non-volatile source; prefer permanent IDs (DOI, arXiv, RFC number, git SHA) over URLs.
+Leaderboards, pricing/rate limits, annual surveys, aggregator front pages, live threat feeds, GitHub trending, model names/context windows/cutoffs, vendor names post-acquisition or rebrand. Cite with access date; cross-check high-impact claims against a non-volatile source. Prefer permanent IDs (DOI, arXiv ID, RFC number, git SHA, CVE ID) over URLs, and re-resolve the current canonical home rather than trusting a URL from memory or an earlier citation — these rename repeatedly.
 
 ## Output Format
 
@@ -56,14 +73,14 @@ Structure is the contract; length is not — short factual queries collapse to a
 
 ## Stop When
 
-All hold: every outline item has a Tier 1–2 source or sits in Gaps · last 1–2 loops yielded no new substantive claims · high-impact claims verified · Tentative/Disputed/Unknown explicit, not dropped · budget spent. "Could not find X" is a valid result; never fabricate to close a gap.
+All hold: every outline item has a Tier 1–2 source or sits in Gaps · last 1–2 loops yielded no new substantive claims · high-impact claims verified · Tentative/Disputed/Unknown explicit, not dropped · budget spent.
 
 ## Parallel Pattern (10+ independent items, subagents)
 
-One self-contained prompt per agent (item + fields + output schema), 3–5 concurrent, results to disk, skip completed on retry; review each batch; mark uncertain findings `[uncertain]` for a second pass. Below 10, sequential. Google dorks first — `search-techniques.md`.
+One self-contained prompt per agent — item, fields, schema, its share of the query budget — 3–5 concurrent, results to disk, skip completed items on retry; review each batch; mark uncertain findings `[uncertain]` for a second pass. Many sources at once → one bulk-crawler dispatch, not one fetch per agent. Below 10 items, sequential.
 
 ## References
 
-- `search-techniques.md` — dorks, Scholar, finding originals, Wayback.
-- `sources-by-domain.md` — per-domain source lists (security, web, cloud, AI/ML, crypto).
-- `sources-and-apis.md` — databases, APIs, tools by type.
+- `search-techniques.md` — query syntax, finding originals, archives. Read before a search-heavy task.
+- `sources-by-domain.md` — curated per-domain source lists (security, web, cloud, AI/ML, crypto).
+- `sources-and-apis.md` — databases, APIs and their rate limits, docs-index and archive tools.

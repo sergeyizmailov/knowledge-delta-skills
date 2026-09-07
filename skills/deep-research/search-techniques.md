@@ -1,154 +1,38 @@
 # Search Techniques
 
-## Google Dork Operators
+URLs below verified 2026-09-08 (see SKILL.md for the single verification-date policy).
 
-```
-# Papers and whitepapers
-filetype:pdf "buffer overflow" site:edu
-filetype:pdf "threat intelligence" site:gov
-filetype:pdf site:arxiv.org "topic"
+## Operators (quick lookup, not tutorial — a model already knows the syntax)
 
-# Vendor whitepapers
-site:crowdstrike.com filetype:pdf
-site:mandiant.com filetype:pdf "threat"
-site:unit42.paloaltonetworks.com "threat research"
+| Operator | Effect |
+|---|---|
+| `site:` | restrict to domain |
+| `filetype:` | restrict to file type |
+| `inurl:` / `intitle:` | match in URL / title |
+| `after:` / `before:` | date-restrict |
+| `-term` | exclude |
+| `allintitle:` (Scholar) | exact-title search |
+| `author:"Name"` (Scholar) | author-restricted |
 
-# Conference talks and presentations
-filetype:pdf site:blackhat.com
-filetype:pdf site:defcon.org
-filetype:pdf site:usenix.org inurl:sec
+## GitHub gotcha
 
-# GitHub via Google (note: Google strips GitHub-specific qualifiers
-# like `language:` and `stars:` — those work only on GitHub Code Search,
-# see the dedicated section below)
-site:github.com "awesome-" inurl:readme "topic"
-inurl:gist.github.com "topic"
-site:github.com "topic" inurl:readme
+Google's `site:github.com` strips GitHub-only qualifiers — `language:`, `stars:`, `symbol:`, `path:` are silently ignored, not an error. Those work only inside GitHub's own search (https://github.com/search), not via Google.
 
-# Code examples and configs on GitHub (Google-side, full-file content match)
-"nginx.conf" "proxy_pass" site:github.com
-"docker-compose.yml" "traefik" site:github.com
+GitHub Code Search qualifiers: `language:`, `repo:owner/name`, `org:`/`user:`, `path:`, `symbol:` (defined function/class), `content:` (substring match). `stars:>N` works on repo search, not code search.
 
-# Community discussions
-site:reddit.com/r/netsec "CVE-2024"
-site:news.ycombinator.com "topic"
+Cross-repo alternates: https://sourcegraph.com/search (regex + structural search across many repos); https://grep.app (fast plain-text code search; rate-limits aggressively — expect periodic 429s, it is still alive).
 
-# Date-restricted
-"LLM jailbreak" after:2025-01-01
-"supply chain attack" after:2024-06-01 filetype:pdf
+## SIFT — apply before trusting any non-primary source
 
-# Excluding noise
-"smart contract audit" -"hire us" -"contact us" -"get a quote"
-"kubernetes security" -pinterest -facebook filetype:pdf
-
-# Documentation and specs
-site:datatracker.ietf.org "TLS 1.3"
-site:developer.mozilla.org "fetch API"
-site:tc39.es "proposal"
-```
-
-## Google Scholar Techniques
-
-```
-# Exact title search
-allintitle: "attention is all you need"
-
-# Author-specific
-author:"Goodfellow" "adversarial"
-
-# Date-restricted
-"fuzzing" after:2023 -patent
-
-# Survey/review papers (high-level overviews)
-"survey" OR "systematic review" "smart contract vulnerabilities"
-
-# Site restriction
-site:arxiv.org "diffusion model" "text-to-image"
-```
-
-Tips:
-- **"Cited by N"** links → find seminal papers, trace research evolution
-- **"Related articles"** → adjacent work
-- **"All N versions"** → find free copies (preprints, author manuscripts)
-- Sort by date for latest, by relevance for foundational
-
-## Finding the Original Source (SIFT Method)
-
-1. **Stop** — pause before trusting
-2. **Investigate the source** — who published? What expertise?
-3. **Find better coverage** — look for multiple independent sources
-4. **Trace claims upstream** — follow citations/links to primary source
-
-Practical steps:
-- Scroll to references/bibliography at bottom
-- Follow "Source:" or "Via:" links
-- For GitHub repos, check README for "inspired by" or "based on"
-- For blog claims, find the original paper/RFC/commit
-- Use Google Scholar "Cited by" to find first publication of a concept
-- Check Wayback Machine if original links are dead
-
-## Using awesome-* Repos as Curated Indexes
-
-1. Search GitHub for `awesome-{topic}`
-2. Check: stars, last commit, contribution activity
-3. Use as starting point, evaluate each resource independently
-4. If a tool appears in multiple awesome lists → real adoption
-5. Check Contributing guidelines → well-maintained lists have strict criteria
-
-Key meta-lists:
-- https://github.com/sindresorhus/awesome
-- https://github.com/topics/awesome-list
-- https://github.com/best-of-lists/best-of
-
-Security-specific:
-- awesome-hacking, awesome-pentest, awesome-security
-- awesome-osint, awesome-threat-intelligence
-- awesome-malware-analysis, awesome-reversing
-- awesome-web-security, awesome-appsec
+Stop → investigate the source → find better/independent coverage → trace the claim upstream (bibliography, "Source:"/"Via:" link, "based on/inspired by", or Scholar's "Cited by" for first publication). Original dead → check Wayback.
 
 ## Wayback Machine
 
-```
-# Direct URL lookup
-https://web.archive.org/web/2024*/https://example.com/docs/api
+- Browser: `https://web.archive.org/web/<YYYYMMDD>*/https://example.com/path` (wildcard over a date range)
+- CDX API (programmatic): `https://web.archive.org/cdx/search/cdx?url=example.com&output=json&from=YYYYMMDD&to=YYYYMMDD`
 
-# Wildcard search
-https://web.archive.org/web/20220101*/example.com
+Use for: recovering removed docs, diffing API/doc changes across versions, finding deleted repos, verifying a historical claim a live page no longer shows.
 
-# CDX API (programmatic)
-https://web.archive.org/cdx/search/cdx?url=example.com&output=json&from=20200101&to=20250101
-```
+## awesome-* index repos
 
-Use for: recovering removed docs, seeing API changes between versions, finding deleted repos, verifying historical claims.
-
-## GitHub Code Search (NOT Google)
-
-Run these inside https://github.com/search — the qualifiers below are
-GitHub-only and are ignored by Google even with `site:github.com`.
-
-```
-language:python "import torch" path:train symbol:forward
-language:go "net/http" repo:kubernetes/kubernetes
-language:javascript "evilginx" NOT test
-stars:>1000 language:rust topic:cryptography
-org:openssl path:apps content:"BIO_new"
-```
-
-Common qualifiers:
-- `language:` — file language (one per qualifier)
-- `repo:owner/name` — specific repo
-- `org:` / `user:` — owner scope
-- `path:` — directory or file path
-- `symbol:` — defined symbol (function, class, etc.)
-- `content:` — substring within file
-- `stars:>N` — repo star threshold (works on repo search, not code search)
-- `topic:` — repo topic tag
-
-Repo-level discovery uses GitHub Repo Search (different endpoint):
-```
-topic:malware-analysis stars:>500 pushed:>2025-01-01
-in:name "evilginx" language:go
-```
-
-Also: Sourcegraph (https://sourcegraph.com/search) for cross-repo regex and
-structural search; grep.app (https://grep.app) for fast plain-text code search.
+Valid starting point only after checking stars, last-commit recency, and a Contributing doc with actual inclusion criteria — its absence means an unmoderated dump. Treat every listed entry as a lead, not a verified source; evaluate independently. Meta-indexes: https://github.com/sindresorhus/awesome, https://github.com/best-of-lists/best-of.
