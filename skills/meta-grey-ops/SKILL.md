@@ -78,6 +78,7 @@ Not in the scripts and therefore on you: account-level "test new optimizations" 
 | Meta Ads MCP live tool inventory (106 tools, params) | `references/15-mcp-tools-live.md` |
 | **Agent launcher**: plan/apply/verify/activate contract, JSON output, locks | `references/16-metaops-agent-cli.md` |
 | **Catalog as one Google Sheet** — service-account setup, Commerce Manager scheduled feed, columns, `sheetfeed` | `references/17-catalog-via-google-sheets.md` |
+| **Fanpage by GEO/tier**: white vs mechanic vs empty (disputed), name/avatar freeze, one Page vs many, NPE partner-share, PBIA | `references/18-fanpage-lifecycle-and-shielding.md` |
 | Per-vertical playbooks (casino, nutra, crypto-trading, news-tg) | `playbooks/` — numbers are dated vendor/team priors, replace with live data |
 
 Declared gaps: no dating or loans playbook; `APP_PROMOTION` only directional in `playbooks/casino.md`.

@@ -1,6 +1,6 @@
 # 04 — Mass launch via API
 
-Reviewed 2026-09-03.
+Reviewed 2026-09-06.
 
 **Execute every mutation through `metaops`** in the order defined by `00-launch-runbook.md`.
 The files in `../scripts/` are internal implementations and debugging surfaces; their direct
@@ -9,10 +9,22 @@ For a missing payload shape, extend `metaops` and its tests instead of issuing a
 
 ## Structures
 
-- 1-1-3: Meta dumps ~90% of adset budget into ONE ad — useless for creative comparison; use only to probe unknown accounts for delivery.
-- 1-3-1: own budget per creative, but audiences/auction overlap across adsets → directional read only (causal read needs the A/B Test tool, measurement-experimentation-ops). 3–5 adsets, unique creative per adset (field claim ~2x cheaper, unverified). Spend rotates adset-to-adset by day — judge on a 3-day window, not day-1 CPL.
-- CBO reallocates toward the early leader (least balanced). ABO splits evenly but multiplies spend.
-- Scale winners: 1-1-3 at higher budget, or horizontal (more accounts), +20-30%/day.
+CBO is the default (~90% of current grey iGaming launches). ABO (~10%) is a rare even-split test — **do not kill an ABO campaign on its total spend**: spend is smeared across ad sets; each set may not have reached install price yet. Judge per ad set.
+
+`N-M-K` = campaigns × ad sets × ads per ad set. **Same-file vs different-file is a separate choice** — mixing them silently invalidates the read.
+
+| Shape | Creatives | Use |
+|---|---|---|
+| 1-1-3 | 3 ads, one ad set | Probe only — Meta dumps ~90% into ONE ad |
+| 1-1-1 / 1-N-1 | **different** files | Angle test |
+| 1-5-1 **different** | 5 files, 1 per ad set | Angle test, more cells |
+| 1-5-1 **same** | one file in all 5 ad sets | CBO allocation of a **winner**, not a creative read |
+| 1-3-1 | unique file per ad set | Directional screen; 3–5 ad sets; judge a 3-day window, not day-1 CPL (causal read → A/B tool, measurement-experimentation-ops). Field claim ~2× cheaper, unverified |
+| 1-3-3 **same** | same files in each ad set, then dup ad sets | Proven combo — CBO baskets, not a test |
+
+Auction overlap still applies: same creative across ad sets is **not** a clean test. Use same-file 1-5-1 / 1-3-3 only when the question is CBO allocation. CBO reallocates toward the early leader; ABO splits evenly but multiplies spend.
+
+Scale **structure**: 1-1-3 at higher budget, or duplicate the **winning ad set into a NEW campaign** (not extra ad sets inside the same CBO). Step size → `senior-buyer-ops/01` (three modes). Horizontal = more accounts.
 
 ## Bid strategies
 
@@ -115,7 +127,7 @@ A high day-0 budget on a fresh/low-history account triggers review and tanks del
 
 - Organic limit ramp (practitioner, unverified): fresh BM accounts often open at ~$150/day; hitting the cap 1-2 days running raises it organically (~$250-300, then ~$600). Ramp by spending into the cap — don't request increases.
 - Billing warm-up (practitioner): run $1-3 campaigns until 1-2 SUCCESSFUL charges post on the FBP before real spend — charged accounts flagged for payment failure far less.
-- **Budget-raise step protocol** (practitioner; Meta only says "small edits don't reset learning, large do", no %): ≤20%/edit, 48-72h between steps, never near end of geo-day (doubled budget at 10pm = 2h to spend it — official troubleshoot doc). Same rule for CBO campaign budget as adset. FIELD-VERIFIED 2026-08-31: +200% on 5 CBO campaigns at once, evening, fresh BM → account-wide silent delivery freeze for hours (all ACTIVE, zero impressions, even brand-new probe campaigns, no API-visible flag). Remedy: revert to last good budget, touch NOTHING 48-72h — new-account spend throttles are real, undocumented, API-invisible.
+- **Budget-raise step protocol** (practitioner; Meta only says "small edits don't reset learning, large do", no %): ≤20%/edit, 48-72h between steps, never near end of geo-day (doubled budget at 10pm = 2h to spend it — official troubleshoot doc). Same rule for CBO campaign budget as adset. FIELD-VERIFIED 2026-08-31: +200% on 5 CBO campaigns at once, evening, fresh BM → account-wide silent delivery freeze for hours (all ACTIVE, zero impressions, even brand-new probe campaigns, no API-visible flag). Remedy: revert to last good budget, touch NOTHING 48-72h — new-account spend throttles are real, undocumented, API-invisible. **Tz-midnight leftover** (practitioner, Admatrix 2026): if you scaled during the day (budget $10k, spent $5k), **reset the campaign budget to start size before the account-tz day rolls**. FB can dump yesterday's unspent remainder into the new day → walk-in −$2k. Distinct from the evening +200% freeze: leftover *capacity*, not a learning reset. Aggressive same-day steps (X2 / x5–x10) → `senior-buyer-ops/01`.
 - Trade-off: too-timid start STARVES the optimization event, keeps adset learning-limited — warm-up caution vs clearing the learning-volume floor is the real tension, not "low = safe".
 
 ## Metric levers (grey application; theory in meta-ads/06 & 12)

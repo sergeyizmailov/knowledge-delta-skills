@@ -17,8 +17,11 @@ accounts + budget + creative across testing and scaling.
 Split the daily pool into buckets, not one blob: TESTING (new accounts/creos hunting for delivery
 - a winner), SCALING (proven account+creo, ramp), RESERVE (unlaunched accounts held against ban
 rate). Common starting split ~50/40/10 — a lever, not a law; shift toward scaling as winners
-stabilise, toward testing after a ban wave. Never launch the whole account stock at once — the ban
-rate means no replacements; reserve keeps scaling uninterrupted.
+stabilise, toward testing after a ban wave **if new-campaign hook-rate is still usable**. When
+hook-rate has collapsed (~1/10), exploit hooked campaigns (prune + resume) rather than flooding
+8–10 new lotteries per day. 50–100 campaigns/account is a reject-wave response, not a default —
+`meta-grey-ops/13` still treats >50/day as unmanageable ops. Never launch the whole account stock
+at once — the ban rate means no replacements; reserve keeps scaling uninterrupted.
 
 ## Account prioritisation & replacement queue
 
@@ -35,14 +38,30 @@ rate means no replacements; reserve keeps scaling uninterrupted.
 Automating any of the three: `04-automated-rules.md` (thresholds that hold at small counts, and
 platform constraints on expressing them).
 
-- KILL: threshold from the operating contract, not a built-in default — "no payout event after
-  ~1.5-2× target CPA" is a common starting heuristic, team's contract sets the real number; plus
-  account verdict (agreed $ with CPA over target, zero delivery in 2-3d, or any disable).
+- KILL **ad sets**, not cabinet totals. A losing day with hooked sets inside is a prune — panic-
+  stopping everything and relaunching from zero is the common minus. Threshold from the operating
+  contract — "no payout event after ~1.5-2× target CPA" is a starting heuristic, the contract
+  sets the real number; plus account verdict (agreed $ with CPA over target, zero delivery in
+  2-3d, or any disable). Next day: resume what already printed **regs or deps**; clicks/installs-
+  only do not earn a second day by default; regs-without-dep do (dep may land on the 3rd–4th
+  reg). One lucky dep does not license holding a dead campaign: if uniques/installs/regs died
+  after it, kill or keep **only** the dep ad set (duplicate it into a new campaign —
+  `meta-grey-ops/04`). Do not X2 the whole CBO.
 - WATCH: provisional — inside target but thin volume, or a winner whose quality metric hasn't
   matured yet (judge on click-date cohort, tracker-ops/01).
-- SCALE: proven account+creo → vertical (~+20-30%/day team heuristic — large jumps CAN re-enter
-  learning, Meta guarantees no universal %, meta-grey-ops/04) or horizontal (duplicate winner to
-  reserve accounts). Migrate winners to fresh accounts before the old one fatigues/dies.
+- SCALE — pick the mode by **how long the asset will live**, not by habit. Meta publishes no
+  universal safe % (`meta-grey-ops/04` warm-up: +200% evening on a fresh BM froze delivery).
+  1. **Gradual** (T3 / account lives days): small steps. A jump to 5× on a $15–20 T3 start kills
+     winners.
+  2. **X2 after 1st dep** (T1, campaign often dies in hours): if unique/install/reg hold, wait
+     3rd dep and X2 again until optimization breaks. After X2, CPC/install getting more expensive
+     is expected briefly — judge regs/deps. If those die, kill despite the dep.
+  3. **Same-day x5–x10** (ban-rate of accounts/FPs/ads is high): squeeze a hooked campaign today;
+     roll back to midpoint if it was a fluke. Textbook +20–30%/48–72h still applies on **stable**
+     accounts.
+  Horizontal: duplicate the winner **into a new campaign** or onto reserve accounts. Migrate
+  winners to fresh accounts before the old one fatigues/dies. Tz-midnight leftover reset →
+  `meta-grey-ops/04`.
 
 ## Marginal scaling (never scale on blended CPA)
 
