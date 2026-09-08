@@ -27,8 +27,8 @@ Live sources: `agentskills.io/specification` · `code.claude.com/docs/en/skills`
 | description + `when_to_use` truncation in the listing | 1536 chars combined | **Claude Code** |
 | Skill-listing budget | 1% of the model's context window; raise with `skillListingBudgetFraction` or a fixed char count in `SLASH_COMMAND_TOOL_CHAR_BUDGET` (2026-09-08) | **Claude Code** |
 | Listing overflow behavior | Every skill **name** always ships; **descriptions are shortened, then dropped**, least-invoked first, so a real skill can reach the model as a bare name (2026-09-08) | **Claude Code** |
-| Visibility override | `skillOverrides` in settings: `on` (name+description) · `name-only` · `user-invocable-only` (hidden from the model, still in `/`) · `off`. Absent key = `on` (2026-09-08) | **Claude Code** |
-| Listing diagnostics | `/doctor` (listing cost + top contributors), `/skill-doctor` (candidates to disable), `Skills` row in `/context` (post-budget size), overflow warning in `--debug` (2026-09-08) | **Claude Code** |
+| Visibility override | `skillOverrides` in settings: `on` (name+description) · `name-only` · `user-invocable-only` (hidden from the model, still in `/`) · `off`. Absent key = `on`. **Does not apply to plugin skills** — those are managed through `/plugin` (2026-09-08) | **Claude Code** |
+| Listing diagnostics | `/doctor` (listing cost + top contributors), `/skill-doctor` (per-skill cost and use count; prints as text under `-p`, Stats tab interactively), `Skills` row in `/context` (post-budget size), overflow warning in `--debug` (2026-09-08) | **Claude Code** |
 | Level-1 metadata cost | ~100 tokens per installed skill | Claude |
 | Level-2 body target | <5k tokens | Claude |
 | SKILL.md body guidance | <500 lines | Claude docs, 3 sources |
@@ -62,7 +62,7 @@ optional (falls back to dir name + first paragraph). Write both regardless.
 
 | Level | Loaded | Cost |
 |---|---|---|
-| 1 — `name` + `description` | Every request, every model-invocable skill | Small but permanent (§0) |
+| 1 — `name` + `description` | Every request, every model-invocable skill — description only while the listing budget holds (§0) | Small but permanent (§0) |
 | 2 — SKILL.md body | On trigger | The whole body at once (§0) |
 | 3 — bundled files | When read | Zero until read |
 | 4 — scripts | On execution | stdout only |
@@ -76,7 +76,8 @@ not one-shot. A runtime that compacts long sessions may re-attach only the **hea
 
 ## 3. Description — the highest-leverage field
 
-The only thing deciding whether it fires on its own; explicit invocation bypasses it. Sources
+The only *authored* input deciding whether it fires on its own — but the listing budget and
+`skillOverrides` decide whether the model sees it at all (§0). Explicit invocation bypasses it. Sources
 genuinely disagree; the resolution:
 
 - **Include:** what it does, concrete trigger conditions, the exact terms a user would type, symptom

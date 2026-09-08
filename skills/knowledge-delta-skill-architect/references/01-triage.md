@@ -83,8 +83,9 @@ whose mechanism a reference owns, a source map necessarily repeats the claims it
 non-negotiables tail restates on purpose — it is what survives skimming and compaction.
 
 Deliberate exception: a skill shipped **standalone** must be self-contained even at the cost of
-cross-package duplication — Anthropic's `docx`/`pptx`/`xlsx` ship 150 byte-identical copies of 50
-files; whatever the motive, that is the standalone trade-off. Duplicate *across* separately-shipped
+cross-package duplication — Anthropic's `docx`/`pptx`/`xlsx` shipped 150 byte-identical copies of 50
+files when counted (2026-08-28, revision not recorded — treat as a historical observation, not a
+current count); whatever the motive, that is the standalone trade-off. Duplicate *across* separately-shipped
 packages; never *within* one.
 
 ## 7. Compression

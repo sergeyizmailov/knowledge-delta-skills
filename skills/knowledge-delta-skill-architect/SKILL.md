@@ -127,21 +127,23 @@ Value ≈ (Δbehavior × frequency × longevity × source_reliability) / tokens
 Not a computable score — a gate. Novel-but-inert is trivia; actionable-but-known is [R]. Multiplicative
 because any zero cuts the line; never average a zero away.
 
-Every model-invocable skill's description is loaded on every request whether or not it fires
-(manual-only opts out — `02` §2), and a triggered body then competes for the window with the user's
-files. Oversizing costs both. Practitioner opinion with no cost function behind it: lift bought at
+Every model-invocable skill's description competes for a listing loaded on every request whether or
+not the skill fires (manual-only opts out — `02` §2), and a triggered body then competes for the
+window with the user's files. Oversizing costs both — and past the listing budget it costs delivery:
+names always ship, descriptions get shortened and then dropped (`02` §0). Practitioner opinion with no cost function behind it: lift bought at
 several times the tokens may not be worth it — judge per task, not by the ratio (`03`).
 
 ## Budgets
 
 | Layer | Loaded | Rule |
 |---|---|---|
-| `name` + `description` | **every request**, triggered or not, unless manual-only | Shortest text that still fires |
+| `name` + `description` | **every request**, triggered or not, unless manual-only — but only as far as the listing budget reaches (`02` §0) | Shortest text that still fires |
 | SKILL.md body | on trigger, in full | Routes; holds only what applies every time |
 | Reference file | only when read | One domain each; TOC once it is long |
 | Script | never — stdout only | Deterministic work belongs here |
 
-**Every numeric limit lives in `02` §0** — one dated table, the only part of this skill that expires.
+**Every numeric limit lives in `02` §0**, dated per row — together with the runtime behavior around
+it, which expires the same way.
 
 **Front-load.** Decision rules at the top, never mid-file: ordering alone measurably changes what the
 model follows (effect size is model-dependent — `03`), and a runtime that compacts long sessions may
@@ -172,9 +174,14 @@ fixes one and breaks another is a net loss.
 
 **Rerunning the build set proves the known cases are fixed, not that the skill generalizes** — those
 tasks selected the content. Hold out 2–3 unseen variants of the same failure modes, written before the
-draft and never used during triage, and run them too. Fixed on the build set but not the held-out set
-= fitted to the examples; the rule is too specific, or it encodes the instance instead of the
-condition.
+draft and never used during triage. Run them **paired**: once with no skill, once with the draft —
+passing with the draft alone shows nothing if the model already passed without it.
+
+Held-out failure is evidence that transfer is unconfirmed, not proof of overfitting: it can also be a
+flaky run, a harder instance, or a different failure mode. Re-run before concluding; if it holds, the
+rule is likely too specific — encoding the instance instead of the condition. Once you fix anything
+against these tasks they are development data, not an independent check; write fresh ones for the
+next round.
 
 Log which rule fixed which task as a **cut heuristic** — a rule no task points back to is a cut
 candidate. It is not causal attribution: several rules changed at once, so only the package is
