@@ -26,9 +26,10 @@ venue** · `[preprint]` arXiv only, no venue found · `[measured]` counted direc
 
 | Claim | Tier | Source |
 |---|---|---|
-| Median 209 lines, mean 242, 92% under 500 (n=39) | [measured] | `anthropics/skills`, `obra/superpowers`, `coreyhaines31/marketingskills`, counted with `wc -l` |
-| `pdf` 314 lines mostly boilerplate vs `docx` 91 lines mostly gotchas — length inversely tracked expertise | [measured] | github.com/anthropics/skills |
-| 50 files duplicated byte-identically across docx/pptx/xlsx (150 copies) | [measured] | same, verified by git blob SHA |
+| Median 209 lines, mean 242, 92% under 500 (n=39) | [measured] | `anthropics/skills`, `obra/superpowers`, `coreyhaines31/marketingskills`, counted with `wc -l`. **Snapshot revisions not recorded** — re-count before quoting; the repos move |
+| `pdf` 314 lines vs `docx` 91 lines | [measured] | github.com/anthropics/skills, `wc -l`, revision not recorded |
+| The longer file is mostly boilerplate and the shorter mostly gotchas, i.e. length tracked expertise inversely — on this pair | **[inference]** | mine, reading both files; a judgment about content, not a count, and n=2 |
+| 50 files duplicated byte-identically across docx/pptx/xlsx (150 copies) | [measured] | same, verified by git blob SHA; **repo revision not recorded** |
 | Description summarizing the workflow caused a skipped step | [practitioner] | `obra/superpowers` writing-skills, documented incident |
 | Descriptions should be "a little bit pushy" | [official] | `anthropics/skills` skill-creator — conflicts with the row above |
 | Volatile facts isolated + live-lookup + "unfamiliar strings are real" | [official] | `anthropics/skills` claude-api SKILL.md |

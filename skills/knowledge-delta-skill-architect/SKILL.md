@@ -42,7 +42,7 @@ paragraph inside your own domain is the most expensive token you can spend `[inf
 | 3 | **Research** the confirmed gaps, then one bounded discovery phase | below |
 | 4 | **Triage** into a keep-list where every rule names what it prevents or unlocks | `01` |
 | 5 | **Package** — hub that routes, references that hold detail; folder name = `name` field, placed in the runtime's skills directory | `02` |
-| 6 | **Rerun** the same tasks with the draft. Keep only what fixed an observed failure or unlocked a validated capability | below |
+| 6 | **Rerun** the build tasks *and held-out variants* with the draft. Keep only what fixed an observed failure or unlocked a validated capability | below |
 | 7 | **Ship check** | below |
 
 ### Scope, then baseline
@@ -54,7 +54,9 @@ that made you want the skill. Invented tasks produce a benchmark you were always
 with no tasks attached, ask for them; if the user has none, say the skill will be unmeasured and build
 the set from the domain's own failure literature instead.
 
-**Write the expected end state per task before running anything** — 2–4 checkable assertions. Written
+**Write the expected end state per task before running anything** — 2–4 checkable assertions. Reserve
+2–3 of the tasks, or unseen variants of them, as a held-out set: written now, never looked at during
+research or triage, run only at step 6. Written
 afterwards, a rubric only ratifies what happened. Where the correct answer is what you are about to
 research, assert the observable end state (*did it reach X, did it check Y*), record what the model
 actually did, and settle right-from-wrong after the research. Collect trigger phrasings at the same
@@ -148,9 +150,10 @@ re-attach only the head of each skill (Claude Code does — `02` §0).
 ## Cut rules
 
 Cut on **any**: the model already did it right without you **and nothing stronger existed** · you
-cannot name the failure it prevents or the action it unlocks · it is a definition or a tutorial · it
-restates docs the model demonstrably recalls · another section owns the fact · it is volatile and
-undated · removing it changes nothing **and** you cannot say why it should have helped.
+cannot name the failure it prevents or the action it unlocks · it is a definition or a tutorial **that
+no observed failure called for** · it restates docs the model demonstrably recalls · another section
+owns the fact · it is volatile and undated · removing it changes nothing **and** you cannot say why it
+should have helped.
 
 Test the last one by deleting the section and rerunning. It needs both halves: a handful of tasks only
 reveals large effects, so no visible change is not proof on its own.
@@ -164,9 +167,18 @@ folder if it can read one, since pasting the body tests the content but never th
 disclosure. Your own session holds the research and the drafting, so testing in it proves nothing; if
 you cannot spawn one, run the tasks anyway and record the result as contaminated, not as evidence.
 
-Diff each result against the failure you recorded. Log which rule fixed which task — a rule no task
-points back to is a cut candidate. Re-check the tasks that already passed: a rule that fixes one and
-breaks another is a net loss.
+Diff each result against the failure you recorded. Re-check the tasks that already passed: a rule that
+fixes one and breaks another is a net loss.
+
+**Rerunning the build set proves the known cases are fixed, not that the skill generalizes** — those
+tasks selected the content. Hold out 2–3 unseen variants of the same failure modes, written before the
+draft and never used during triage, and run them too. Fixed on the build set but not the held-out set
+= fitted to the examples; the rule is too specific, or it encodes the instance instead of the
+condition.
+
+Log which rule fixed which task as a **cut heuristic** — a rule no task points back to is a cut
+candidate. It is not causal attribution: several rules changed at once, so only the package is
+measured. Where one rule's contribution actually matters, ablate it alone and rerun.
 
 ## Ship check
 

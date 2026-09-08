@@ -23,9 +23,10 @@ threshold that changes the decision · decision rule between two defensible opti
 discriminator · platform quirk not derivable from the spec · postmortem (symptom → confirmed cause →
 fix) · imperative line for an observed skip.
 
-Never keep: definitions · "what is X" · tutorial sequences for standard operations · generic best
-practice ("handle errors", "write clean code") · explanation that changes neither application nor
-generalization.
+Never keep — **unless the baseline failed without it**; the gap is sometimes a missing definition:
+definitions · "what is X" · tutorial sequences for standard operations · generic best practice
+("handle errors", "write clean code") · explanation that changes neither application nor
+generalization. The keep test in this section outranks the list: an observed failure beats the ban.
 
 ## 2. What expertise reads like
 
@@ -105,7 +106,7 @@ After triage, never before — you cannot compress your way out of keeping the w
 | The Tutorial | Teaches the domain from first principles | Start at the expert's first non-obvious decision |
 | The Dump | Everything found, unfiltered | Triage against the failure inventory |
 | Orphan Reference | Files nothing points at, or a bare link | Annotate every pointer with its trigger |
-| Invisible Skill | Correct content, never fires | Description = trigger conditions, not workflow |
+| Invisible Skill | Correct content, never fires | Confirm the model was shown the description before rewriting it — listing budget, truncation and visibility overrides can deliver a bare name (`02 §0`). Then: description = trigger conditions, not workflow |
 | Checkbox Procedure | Generic steps fitting any domain | Domain-specific decision points |
 | Vague Warning | "Be careful with X" | Name condition, symptom, fix |
 | Freedom Mismatch | Rigid script for a judgment call, or loose prose for a fragile op | Match freedom to fragility |

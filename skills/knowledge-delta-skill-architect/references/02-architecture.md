@@ -6,15 +6,17 @@ inline. The method in `SKILL.md` does not move with either.
 Contents: 0 runtime limits · 1 frontmatter · 2 disclosure · 3 description · 4 layout ·
 4b scaling across references · 5 freedom · 6 scripts · 7 portability
 
-## 0. Runtime limits — the only part of this skill that expires
+## 0. Runtime limits and runtime behavior — what expires first
 
-Verified 2026-08-28; frontmatter semantics changed several times through 2025–26. When a runtime
-changes, re-check this table alone — nothing else in the skill needs editing with it.
+Verified 2026-08-28, listing/visibility rows 2026-09-08; frontmatter semantics changed several times
+through 2025–26. When a runtime changes, re-check **this table and every inline runtime flag in
+§§1–7** — numbers are isolated here, behavior is not, and a behavior change (how the listing is
+budgeted, how visibility is overridden) lands outside this table.
 
 Live sources: `agentskills.io/specification` · `code.claude.com/docs/en/skills` ·
 `platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices`
 
-| Limit | Value (2026-08-28) | Scope |
+| Limit | Value (dated per row; undated = 2026-08-28) | Scope |
 |---|---|---|
 | `name` max length | 64 chars, lowercase/digits/hyphens | Portable + Claude |
 | `description` max length | 1024 chars | Portable + Claude |
@@ -23,6 +25,10 @@ Live sources: `agentskills.io/specification` · `code.claude.com/docs/en/skills`
 | `allowed-tools` type | space-separated string | Portable |
 | `allowed-tools` type | string **or** YAML list | **Claude Code** |
 | description + `when_to_use` truncation in the listing | 1536 chars combined | **Claude Code** |
+| Skill-listing budget | 1% of the model's context window; raise with `skillListingBudgetFraction` or a fixed char count in `SLASH_COMMAND_TOOL_CHAR_BUDGET` (2026-09-08) | **Claude Code** |
+| Listing overflow behavior | Every skill **name** always ships; **descriptions are shortened, then dropped**, least-invoked first, so a real skill can reach the model as a bare name (2026-09-08) | **Claude Code** |
+| Visibility override | `skillOverrides` in settings: `on` (name+description) · `name-only` · `user-invocable-only` (hidden from the model, still in `/`) · `off`. Absent key = `on` (2026-09-08) | **Claude Code** |
+| Listing diagnostics | `/doctor` (listing cost + top contributors), `/skill-doctor` (candidates to disable), `Skills` row in `/context` (post-budget size), overflow warning in `--debug` (2026-09-08) | **Claude Code** |
 | Level-1 metadata cost | ~100 tokens per installed skill | Claude |
 | Level-2 body target | <5k tokens | Claude |
 | SKILL.md body guidance | <500 lines | Claude docs, 3 sources |
@@ -38,7 +44,7 @@ Lengths, reserved words and field lists live in §0. The rules that outlast them
 |---|---|
 | `name` | Lowercase/digits/hyphens, no XML tags, matches the folder. Gerund (`processing-pdfs`) or noun phrase; never `helper`, `utils`, `data` |
 | `description` | Non-empty, no XML tags. **Third person** — a Claude rule, not portable; it is injected into the system prompt, and mixed point-of-view can break discovery |
-| `allowed-tools` | **Pre-approves** for the invoking turn only; does **not** sandbox — every other tool stays callable. Treating it as a security boundary is a misreading |
+| `allowed-tools` | **Pre-approves** for the invoking turn only; does **not** sandbox — every other tool stays callable. Treating it as a security boundary is a misreading. **Claude Code behavior**; other runtimes may scope it differently |
 
 **`allowed-tools` type differs by surface** (§0): write the string form for anything portable; a YAML
 list is runtime-only. A CI schema demanding an array is stricter than the portable spec, and
