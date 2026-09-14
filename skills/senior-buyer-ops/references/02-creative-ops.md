@@ -80,6 +80,14 @@ in first pinned comment (sweeps technique; ~10× organic/viral reach claimed on 
 
 - AdSpy — deepest FB/IG DB (comment + affiliate-network filters); best for grey.
 - AdHeart — FB/IG, strong in CIS grey scene.
+- SpyTrend — Meta+TikTok. The differentiator is **advertiser/webmaster clustering**: ads
+  grouped into one team by pixel + landing domain + Page ID, so you pull a competitor's whole
+  operation (active-ad count over time, which domains and Pages are live now) instead of
+  single creatives. Also filters on **likes** (a proxy for real volume — and for teams who
+  self-like and script comments to warm an ad, `02` comment ops). Per-ad transcript/translate
+  helps adapt a foreign creative. **Official MCP server** (`mcp.spytrend.com/mcp`, OAuth 2.1,
+  ~20 tools) — the one spy in this list an agent can query directly; Pro $79/mo, free tier
+  [vendor site, verified 2026-09-09]. Corpus size and coverage claims are the vendor's own.
 - Anstrex — native + push, rips landing/pre-lander pages (nutra pre-landers).
 - Meta Ad Library — official, no spend/performance, no cloaked/rejected ads → baseline recon only.
 - GEO-local spy farm [MagicClick 2026]: seed a GEO-reg acc → search/join/like casino Pages → click

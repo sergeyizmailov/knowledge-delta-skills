@@ -1,6 +1,6 @@
 # 07 — Review layer, cloaking, creative-classifier tricks
 
-Reviewed 2026-08-27. Session/IP → `01`. Agency/BM → `03`. API launch / re-moderation
+Reviewed 2026-09-09. Session/IP → `01`. Agency/BM → `03`. API launch / re-moderation
 → `04`. Policy taxonomy (clean lane) → `meta-ads/07`. Grey overlay: how Meta's
 review fetch is filtered, which creative/format tricks still move the classifier.
 
@@ -211,6 +211,21 @@ substitution pattern) but is bot-vs-user differentiation — risk-bearing.
 content structured for a different audience signal than users see → delivery
 explores audiences the user lander never attracted; readout = frequency at
 scale, not CTR. Attribute with `06`'s balanced designs, one axis at a time.
+
+## Submission-shape tricks (cheap, no cloak) 🔺
+
+[practitioner, Praktichesky Arbitrazh 2026-09-08, no attribution design — one team's habits,
+all changed together in one session. Hypotheses for `06`-style one-axis tests, not rules.]
+
+- **Publish sequentially, one campaign at a time.** Mass-publishing (their example: 100
+  accounts / 100 ad sets in one go) was blamed for a reject wave on bought spend accounts.
+  Cheap to comply with and consistent with the burst-behaviour logic already in `01`; our
+  bulk launcher creates PAUSED and activates on a confirm gate, which spreads writes anyway.
+- **Reject-recovery by duplicate-and-swap.** When part of a batch is approved and part
+  rejected: duplicate an APPROVED ad set and swap the not-yet-used creatives into the copy,
+  rather than editing or resubmitting the rejected one. Same logic as `04`'s "refresh as a
+  new object, don't edit a live ad." They also changed domain and Page in the same recovery
+  — so the swap alone is unattributed.
 
 ## Identity / BM verification gates
 

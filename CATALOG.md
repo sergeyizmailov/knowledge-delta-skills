@@ -3,13 +3,16 @@
 Every skill, grouped by domain for browsing — each folder sits directly under
 `skills/` (no category subfolders on disk), so a single `cp` installs any of them.
 
-## Media buying — Meta & Google
+## Media buying — Meta, Google & TikTok
 
 Layered by concern, not platform: buy mechanics (`meta-ads`, `google-ads`) → survival
 infrastructure (`meta-grey-ops`, `google-grey-ops`) → retail data layer
 (`google-feed-ops`) → counting (`tracker-ops`) → experiment validity
 (`measurement-experimentation-ops`) → portfolio orchestration (`senior-buyer-ops`) on
-top. Two lanes: **clean** (`meta-ads`, `google-ads`, `google-feed-ops`, `tracker-ops`,
+top. TikTok layers differently: strategy and diagnosis (`tiktok-ads`) sit above execution
+against the official TikTok MCP server and Marketing API, guarded by the `ttops` CLI
+(`tiktok-ops`) — both clean-lane, no grey counterpart. Two lanes for Meta/Google: **clean**
+(`meta-ads`, `google-ads`, `google-feed-ops`, `tracker-ops`,
 `measurement-experimentation-ops`) and **grey opt-in** (`meta-grey-ops`, `google-grey-ops`,
 `senior-buyer-ops`) — see README § Install. Skills cross-reference by name; install a whole lane.
 
@@ -23,6 +26,8 @@ top. Two lanes: **clean** (`meta-ads`, `google-ads`, `google-feed-ops`, `tracker
 | [**tracker-ops**](skills/tracker-ops) | Operates affiliate trackers (Keitaro, Binom): postback/S2S wiring, payout-vs-all-conversions metric discipline, timezone/CPL math, daily spend-sync, and the gclid-to-offline-conversion chain. |
 | [**measurement-experimentation-ops**](skills/measurement-experimentation-ops) | Decides whether a media-buying result is real before scaling it: test-mode selection, validity traps (SRM, peeking, contamination), and the platforms' own measurement tools. |
 | [**senior-buyer-ops**](skills/senior-buyer-ops) | Orchestrates a portfolio across Meta and Google: day-1 operating contract, budget allocation, kill/watch/scale rules, creative-intelligence pipeline, funnel QA. |
+| [**tiktok-ads**](skills/tiktok-ads) | Plans and diagnoses TikTok ad accounts through research-first intake and derivation instead of a default template — objectives and optimization events, account/BC roles, targeting, bidding and per-currency budget minimums, creative/identity/Spark Ads, Pixel/Events API and attribution, policy and restricted verticals, catalogs and TikTok Shop — plus vertical playbooks (e-commerce, app promotion, lead gen, finance/investment, iGaming) that are shapes, not recipes. |
+| [**tiktok-ops**](skills/tiktok-ops) | Executes TikTok Ads through the official TikTok for Business MCP server (browser OAuth, no developer app or API key, ~400 tools), with Marketing API v1.3 as a deterministic fallback, guarded by the stdlib-only `ttops` CLI: `preflight` forces `operation_status: DISABLE` on every create, `audit` diffs the read-back before activation — both offline, no token. Doctor → plan → apply (paused) → verify → activate on the token path, per-currency budget safety across all 56 currencies, a return-code/secondary-status catalog, reporting, automated rules and webhooks. 102 offline tests; never yet run against a live advertiser. |
 
 ## Frontend
 

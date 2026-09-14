@@ -49,6 +49,16 @@ platform constraints on expressing them).
   `meta-grey-ops/04`). Do not X2 the whole CBO.
 - WATCH: provisional — inside target but thin volume, or a winner whose quality metric hasn't
   matured yet (judge on click-date cohort, tracker-ops/01).
+- REVIVE on a late dep — the counterpart to the kill rule, because a killed campaign keeps
+  converting for days. A dep landing on an already-stopped campaign is evidence about ONE ad,
+  so resume at that granularity: read the subid/URL tail back to the exact ad, re-enable that
+  ad alone at its ORIGINAL start budget, and change nothing else (new creative or a fresh test
+  restarts learning and destroys the comparison). Promote to the scale ladder only once the
+  revived ad prints 2-3 further deps — a single late dep is the same "one lucky dep" as above
+  and licenses a retest, not a scale. This requires the tail to have been in the URL before
+  launch (`meta-grey-ops/04` `url_tags` snapshot) — retrofitting is impossible after the fact.
+  [practitioner, Praktichesky Arbitrazh 2026-09-08; consistent with lag bands in
+  `meta-grey-ops/playbooks/casino.md`.]
 - SCALE — pick the mode by **how long the asset will live**, not by habit. Meta publishes no
   universal safe % (`meta-grey-ops/04` warm-up: +200% evening on a fresh BM froze delivery).
   1. **Gradual** (T3 / account lives days): small steps. A jump to 5× on a $15–20 T3 start kills
@@ -62,6 +72,12 @@ platform constraints on expressing them).
   Horizontal: duplicate the winner **into a new campaign** or onto reserve accounts. Migrate
   winners to fresh accounts before the old one fatigues/dies. Tz-midnight leftover reset →
   `meta-grey-ops/04`.
+  Meta's own in-UI budget-increase prompt (blue up-arrow chip beside the budget field) is a
+  usable *corroborating* cue that the set isn't budget-capped — it is generated from delivery
+  headroom and knows nothing about your payout, so never take the suggested number on its own.
+  Confirm first that the campaign has 3-5+ days up, stable MATURED cost-per-payout-event, and
+  an unburnt creative; then step per the mode above. Absence of the prompt is not a stop signal.
+  [practitioner, Praktichesky Arbitrazh 2026-09-08.]
 
 ## Marginal scaling (never scale on blended CPA)
 

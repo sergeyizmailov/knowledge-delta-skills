@@ -1,0 +1,49 @@
+{
+  "schema": "ttops.spec/v1",
+  "_readme": [
+    "Shape reference, NOT a recommended strategy. Objective, goal, budget, structure",
+    "and targeting must come from the intake and research in tiktok-ads/01, not from",
+    "copying this file. What is worth copying is the SHAPE and the explicit fields."
+  ],
+  "currency": "USD",
+  "campaign": {
+    "campaign_name": "us-ecom-traffic-2026-09",
+    "objective_type": "TRAFFIC",
+    "special_industries": [],
+    "budget_mode": "BUDGET_MODE_INFINITE"
+  },
+  "adgroups": [
+    {
+      "adgroup_name": "us-broad-18-54",
+      "promotion_type": "WEBSITE",
+      "optimization_goal": "CLICK",
+      "billing_event": "CPC",
+      "pacing": "PACING_MODE_SMOOTH",
+      "bid_type": "BID_TYPE_NO_BID",
+      "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+      "schedule_type": "SCHEDULE_FROM_NOW",
+      "schedule_start_time": "2026-09-20 07:00:00",
+      "budget_mode": "BUDGET_MODE_DAY",
+      "budget": 50,
+      "targeting": {
+        "location_ids": ["6252001"],
+        "age_groups": ["AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54"],
+        "gender": "GENDER_UNLIMITED",
+        "languages": ["en"]
+      },
+      "creatives": [
+        {
+          "ad_name": "hook-a-ugc",
+          "ad_format": "SINGLE_VIDEO",
+          "identity_type": "CUSTOMIZED_USER",
+          "display_name": "Brand Name",
+          "video_id": "REPLACE_WITH_VIDEO_ID",
+          "ad_text": "Ad copy here.",
+          "call_to_action": "SHOP_NOW",
+          "landing_page_url": "https://example.com/lp?sub1=__CAMPAIGN_ID__&sub2=__AID__&sub3=__CID__",
+          "utm_params": "utm_source=tiktok&utm_campaign=__CAMPAIGN_NAME__&utm_content=__CID_NAME__"
+        }
+      ]
+    }
+  ]
+}

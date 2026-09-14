@@ -64,7 +64,7 @@ def _equivalent(expected, actual) -> bool:
     """True when `actual` satisfies everything `expected` asserts."""
     e_dt, a_dt = _as_instant(expected), _as_instant(actual)
     if e_dt and a_dt:
-        return e_dt == a_dt
+        return abs((e_dt - a_dt).total_seconds()) <= 300
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
             return False

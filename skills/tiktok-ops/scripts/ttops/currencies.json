@@ -1,0 +1,226 @@
+{
+"AED": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"ARS": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"AUD": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"BDT": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"BOB": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"BRL": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"CAD": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"CHF": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"CLP": {
+"precision": 1.0,
+"ratio": 1000.0
+},
+"CNY": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"COP": {
+"precision": 0.01,
+"ratio": 1000.0
+},
+"CRC": {
+"precision": 0.01,
+"ratio": 1000.0
+},
+"CZK": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"DKK": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"DZD": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"EGP": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"EUR": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"GBP": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"GTQ": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"HKD": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"HNL": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"HUF": {
+"precision": 1.0,
+"ratio": 1.0
+},
+"IDR": {
+"precision": 1.0,
+"ratio": 10000.0
+},
+"ILS": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"INR": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"ISK": {
+"precision": 1.0,
+"ratio": 100.0
+},
+"JPY": {
+"precision": 1.0,
+"ratio": 100.0
+},
+"KES": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"KRW": {
+"precision": 1.0,
+"ratio": 1000.0
+},
+"MOP": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"MXN": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"MYR": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"NGN": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"NIO": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"NOK": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"NZD": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"PEN": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"PHP": {
+"precision": 0.01,
+"ratio": 50.0
+},
+"PKR": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"PLN": {
+"precision": 0.01,
+"ratio": 4.0
+},
+"PYG": {
+"precision": 1.0,
+"ratio": 10000.0
+},
+"QAR": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"RON": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"RUB": {
+"precision": 0.01,
+"ratio": 100.0
+},
+"SAR": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"SEK": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"SGD": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"THB": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"TRY": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"TWD": {
+"precision": 1.0,
+"ratio": 10.0
+},
+"UAH": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"USD": {
+"precision": 0.01,
+"ratio": 1.0
+},
+"UYU": {
+"precision": 0.01,
+"ratio": 10.0
+},
+"VEF": {
+"precision": 0.01,
+"ratio": 100000.0
+},
+"VND": {
+"precision": 1.0,
+"ratio": 10000.0
+},
+"ZAR": {
+"precision": 0.01,
+"ratio": 10.0
+}
+}

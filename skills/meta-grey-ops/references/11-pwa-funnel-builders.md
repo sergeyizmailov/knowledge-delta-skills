@@ -1,6 +1,6 @@
 # 11 — PWA funnel builders (casino/iGaming)
 
-Reviewed 2026-09-03.
+Reviewed 2026-09-09.
 
 Builders = PWA "install-page" LP + tracker + geo-cloak + CAPI forwarder, one per domain. Contract identical across vendors; only macro spelling, postback host, test tooling differ. Facts: vendor docs/bundles fetched 2026-08-30 (SPA sites, extracted from JS bundles) + practitioner sources — mostly vendor blogs, not neutral measurement.
 
@@ -25,6 +25,8 @@ Builders = PWA "install-page" LP + tracker + geo-cloak + CAPI forwarder, one per
 | **Comsign** (comsign.io) | Docs in-app only | — | Pixel insertable on safe page | Modes Strict/Money/Flexible/Manual; AI whites; 48-lang; HTML randomization | Moderation-protection positioning |
 
 Dead/no public docs 2026-08-30 (don't waste time): AFFPRO, app-pwa.com, ipwa.io, pwabudget.com, pwawave.com, pwa2win.com, appsb.io (dead/parked); EpicPWA, PWA.Market (live, doc-opaque).
+
+Named, contract unknown (evaluate via the 5 points above before spend): **SetPro** — affiliate-promoted, no macro/postback/event mapping published [2026-09-08].
 
 ## Failure modes (documented in the wild, 2026 sources)
 

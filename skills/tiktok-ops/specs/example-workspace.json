@@ -1,0 +1,25 @@
+{
+  "schema": "ttops.workspace/v1",
+  "_readme": [
+    "Copy this into YOUR PROJECT directory, never into the skill directory.",
+    "This file is non-secret: it holds routing, not credentials.",
+    "The token lives only in the environment as TIKTOK_ACCESS_TOKEN.",
+    "currency and timezone must match the ad account exactly - both are permanent",
+    "on TikTok and every budget bound and daily number derives from them.",
+    "ttops doctor checks them against /advertiser/info/ and refuses on a mismatch."
+  ],
+  "default_profile": "main",
+  "blocked_advertiser_ids": [],
+  "profiles": {
+    "main": {
+      "advertiser_id": "7000000000000000000",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "bc_id": "7000000000000000001",
+      "pixel_id": "CXXXXXXXXXXXXXXXXXXX",
+      "identity_id": "",
+      "identity_type": "TT_USER",
+      "notes": "GEO: US. Vertical: e-commerce. Access level: ad-account Admin."
+    }
+  }
+}

@@ -160,9 +160,15 @@ def main() -> int:
     if args.refresh_start:
         i = 0
         while f"adset[{i}]" in objects:
-            graph.post(objects[f"adset[{i}]"], {"start_time": args.refresh_start},
-                       context=f"refresh start adset[{i}]", idempotent=True)
-            print(f"  start_time → {args.refresh_start} on adset[{i}]")
+            try:
+                graph.post(objects[f"adset[{i}]"], {"start_time": args.refresh_start},
+                           context=f"refresh start adset[{i}]", idempotent=True)
+                print(f"  start_time → {args.refresh_start} on adset[{i}]")
+            except graph.GraphError as e:
+                if e.subcode == 1487057 or "1487057" in str(e):
+                    print(f"  start_time already active on adset[{i}] — will start immediately")
+                else:
+                    raise
             i += 1
 
     order = (

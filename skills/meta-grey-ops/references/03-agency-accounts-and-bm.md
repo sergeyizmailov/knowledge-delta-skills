@@ -1,6 +1,6 @@
 # 03 — Agency accounts, BMs, asset sharing
 
-Reviewed 2026-09-03.
+Reviewed 2026-09-09.
 
 **New BM = 1 ad account cap** (UI, field-observed 2026-08-30): more only after
 "several weeks of following policies." Second account today = create BM2, create
@@ -111,6 +111,51 @@ kill/watch/scale watchlist in `senior-buyer-ops/01`.
 - Meta location fees (DST) sit ON TOP of spend, on impressions — full table → `08`.
   Read the invoice line, don't hardcode.
 
+## Bought spend accounts ("расходка") instead of agency seats 🔺
+
+[practitioner, Praktichesky Arbitrazh 2026-09-08 — one team's storm-era answer to agency
+supply drying up; a bought account is still someone else's farmed asset, same tenancy risk
+as an agency seat, plus seller fraud. Not a Meta-sanctioned path.]
+
+Storm-era motive: agencies can't fill demand, fresh agency stock ("автореги" — newly
+created accounts) delivers weakly and dies. The trade is to buy AGED accounts with real
+spend history and drive them from your own BM.
+
+**Pre-buy QC — read these four fields before paying** (Ads Manager account overview, or
+ask the seller): `Total Spend` > 0 and material (examples cited: $624 / $1.2k / $3.6k);
+`Creation Time` years back (2017 / 2023 vintages cited, up to ~8y); current spend limit
+($145 / $250 / $1050 / no-limit); timezone and currency. Zero-spend accounts ("пустышки")
+were reported to die at a higher rate than spent ones even inside the same batch — spend
+history, not age alone, is the claimed survival factor. Cross-check against the farmed-account
+tells in `01` (ADS_TRUST_TIER, Off-Facebook activity, feed ads) and still judge after
+$30-50 of your own spend (SKILL #5).
+
+Timezone/currency are **60-day locked** (`08`) and pre-set by the seller — they are a
+selection criterion, not something to fix later. Buying a spread of timezones is deliberate:
+it staggers geo-day rollover and start windows across the portfolio.
+
+**Binding order (the one real trap here).** Bind the card FIRST, from the seller-shared
+personal profile, in that account's Billing — THEN request the account into your BM. Binding
+after the BM transfer makes the payment method a BM-level attachment and was reported to
+trigger payment-risk review on the whole setup. Full order:
+
+1. Seller shares the ad account to your social profile (ad account Roles → Admin).
+2. You kick the seller's profile, share to a second profile of your own (needs the two
+   profiles friended; the role dialog asks for the profile's name).
+3. Billing → add card, **as the profile**, before any BM involvement. 3DS codes arrive in
+   the card vendor's statement, not by SMS.
+4. Copy the account id from the `act=` URL param — the Business ID is a different number and
+   pasting it is the usual failed-request cause.
+5. BM → Ad accounts → Request access (never Add — the seller's portfolio still owns it,
+   `meta-ads/01`) → accept the pending request → assign users.
+
+Keep ≥2 profiles per setup purely for access diversification: when one profile hits a
+quality flag, permission assignment silently fails (button active, account invisible) and
+the fix is to grant the role from the other profile, not to retry on the flagged one.
+
+Legacy payment methods sometimes survive on an aged account. Do not spend on a stranger's
+card left in the account — that is card fraud, not a lifehack, whatever the seller implies.
+
 ## Card / topup vendors (Meta) 🔺
 
 Agency crypto-topup is default; for own-BM setups (directory pricing,
@@ -130,6 +175,14 @@ endorsements):
 "Ad-friendly BIN" claims have no methodology — judge vendors on replacement/refund
 terms and fund recovery (same test as Google-side resellers), not BIN marketing.
 The card is a linking signal to the ad account (`07`).
+
+Recurring example of exactly that marketing: an AdsCard BIN pitched as no-freeze plus
+"binds to a $50-limit account and the limit jumps to $500-600" [Praktichesky Arbitrazh
+2026-09-08, affiliate promo — the video states the BIN inconsistently across three mentions,
+so even the digits are unreliable]. Treat limit jumps as Meta's own trust scoring on the
+account, not a property of the BIN. Keep the vendor balance funded: an empty card reads as a
+failed payment and stops delivery account-wide (see billing gotchas above), which the same
+source hit mid-flight.
 
 ## Naming (decide before first launch, never change mid-flight)
 

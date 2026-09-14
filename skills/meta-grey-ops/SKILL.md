@@ -63,7 +63,7 @@ Not in the scripts and therefore on you: account-level "test new optimizations" 
 | **Ordered launch path — START HERE** | `references/00-launch-runbook.md` |
 | Antidetect, proxies, IP/session discipline, checkpoints, domain/pixel rotation | `references/01-infra-and-identity.md` |
 | **Access: app use cases, scopes, System User vs user token, token death, MCP vs API vs CLI, operator handoff checklist** | `references/02-access-tokens-and-mcp.md` |
-| Agency setups, BMs, asset sharing, BM-ban recovery, billing gotchas, naming, replacements | `references/03-agency-accounts-and-bm.md` |
+| Agency setups, BMs, asset sharing, BM-ban recovery, **bought aged "spend" accounts: pre-buy QC + card-before-BM binding order**, billing gotchas, naming, replacements | `references/03-agency-accounts-and-bm.md` |
 | Why the scripts do what they do: structures, params, bid strategies, scheduling, DLO, catalog quirks, media, warm-up, re-moderation | `references/04-mass-launch-api.md` |
 | API errors — grey survival response (freeze/replace/rotate); canonical code→fix is `meta-ads/14` | `references/05-api-error-catalog.md` |
 | Why accounts die, attributed: hazard-rate forensics, balanced infra tests | `references/06-portfolio-forensics.md` |

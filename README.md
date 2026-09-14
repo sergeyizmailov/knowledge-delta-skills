@@ -9,12 +9,15 @@
 
 **Not knowledge for beginners. Missing expertise for already-capable AI.**
 
-Scope: Meta and Google paid media (no TikTok/Microsoft), affiliate trackers (Keitaro deep,
+Scope: Meta, Google, and TikTok paid media (no Microsoft), affiliate trackers (Keitaro deep,
 Binom partial), plus frontend/engineering/security skills. The media-buying set has a **clean
-lane** (buy mechanics, feeds, measurement) and an **opt-in grey lane** (`*-grey-ops`,
-`senior-buyer-ops`) that teaches account-survival tactics for aggressive verticals — install
-the grey lane only if that is your business; an agent with it in context will propose those
-tactics as normal steps.
+lane** (buy mechanics, feeds, measurement, and both TikTok skills) and an **opt-in grey lane**
+(`*-grey-ops`, `senior-buyer-ops`) that teaches account-survival tactics for aggressive
+verticals — install the grey lane only if that is your business; an agent with it in context
+will propose those tactics as normal steps. TikTok has no grey-ops counterpart: `tiktok-ads`
+and `tiktok-ops` are clean-lane only. Its iGaming playbook *describes* the grey market — account
+supply, moderation enforcement, and the destination-GEO legal exposure the field literature omits
+— so an agent working that vertical is not naive, but it implements none of it.
 
 ```text
 baseline what the model already does  →  research only the gaps  →  distil  →  ship the delta
@@ -87,6 +90,7 @@ cd knowledge-delta-skills/skills
 cp -R meta-ads ~/.claude/skills/                                                    # one skill
 cp -R meta-ads google-ads google-feed-ops tracker-ops measurement-experimentation-ops ~/.claude/skills/   # clean lane
 cp -R meta-grey-ops google-grey-ops senior-buyer-ops ~/.claude/skills/              # + grey lane (opt-in)
+cp -R tiktok-ads tiktok-ops ~/.claude/skills/                                       # TikTok (clean only, no grey lane)
 ```
 
 Personal-scope directory by runtime, verified against each vendor's docs on
@@ -106,6 +110,7 @@ Media-buying lanes (skills cross-reference each other by name — install a whol
 |---|---|---|
 | Clean | `meta-ads` `google-ads` `google-feed-ops` `tracker-ops` `measurement-experimentation-ops` | white ecom / lead-gen / SaaS buyers; no grey tactics enter context |
 | Full | clean + `meta-grey-ops` `google-grey-ops` `senior-buyer-ops` | affiliate/grey portfolios; API launchers `metaops`/`googleops` live here with review-layer and account-survival playbooks |
+| TikTok | `tiktok-ads` `tiktok-ops` | strategy (`tiktok-ads`) + execution via the official MCP server / Marketing API (`tiktok-ops`); no grey counterpart exists |
 
 Pointers from clean skills into grey files degrade to "not installed"; nothing breaks. Playbook
 numbers (CPL, kill thresholds, tags) are one team's priors — replace with your contract before

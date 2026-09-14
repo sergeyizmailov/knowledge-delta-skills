@@ -1,0 +1,52 @@
+{
+  "schema": "ttops.spec/v1",
+  "_readme": [
+    "CBO shape. With budget_optimize_on the campaign carries the budget and ad-group",
+    "budgets are ignored by TikTok - ttops rejects a spec that sets both, so the plan",
+    "says what will actually happen.",
+    "pixel_id + optimization_event must point at an event that ALREADY FIRES. Prove it",
+    "in Events Manager before planning: an optimization event the account cannot feed",
+    "starves delivery."
+  ],
+  "currency": "USD",
+  "campaign": {
+    "campaign_name": "us-lead-webconv-2026-09",
+    "objective_type": "WEB_CONVERSIONS",
+    "special_industries": [],
+    "budget_optimize_on": true,
+    "budget_mode": "BUDGET_MODE_DAY",
+    "budget": 300
+  },
+  "adgroups": [
+    {
+      "adgroup_name": "cell-a-broad",
+      "promotion_type": "WEBSITE",
+      "optimization_goal": "CONVERT",
+      "optimization_event": "FORM",
+      "pixel_id": "REPLACE_WITH_PIXEL_ID",
+      "billing_event": "OCPM",
+      "bid_type": "BID_TYPE_NO_BID",
+      "placement_type": "PLACEMENT_TYPE_NORMAL",
+      "placements": ["PLACEMENT_TIKTOK"],
+      "schedule_type": "SCHEDULE_FROM_NOW",
+      "schedule_start_time": "2026-09-20 07:00:00",
+      "targeting": {
+        "location_ids": ["6252001"],
+        "age_groups": ["AGE_25_34", "AGE_35_44", "AGE_45_54"],
+        "gender": "GENDER_UNLIMITED"
+      },
+      "creatives": [
+        {
+          "ad_name": "concept-1-v1",
+          "ad_format": "SINGLE_VIDEO",
+          "identity_type": "TT_USER",
+          "identity_id": "REPLACE_WITH_IDENTITY_ID",
+          "video_id": "REPLACE_WITH_VIDEO_ID",
+          "ad_text": "Ad copy here.",
+          "call_to_action": "LEARN_MORE",
+          "landing_page_url": "https://example.com/offer"
+        }
+      ]
+    }
+  ]
+}

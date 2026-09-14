@@ -5,6 +5,10 @@ description: "Writes, audits, and compresses agent skills so they earn their tok
 
 # Knowledge-Delta Skill Architect
 
+Reviewed 2026-09-09. Method unmeasured — no baseline was run for this skill itself (the
+`Baseline:` stamp §"Scope, then baseline" mandates is therefore absent by disclosure, not
+oversight). Runtime numbers in `02` §0 were verified 2026-08-28 / 09-08.
+
 `01` `02` `03` = the numbered files under `references/`; read triggers in the table at the end.
 Sources and their limits: `03`.
 
