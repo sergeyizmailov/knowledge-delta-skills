@@ -1,6 +1,6 @@
 # 18 — Fanpage identity by GEO/tier, then share/PBIA
 
-Reviewed 2026-09-04. Muse pass 2026-09-04. **Unmeasured.** Freeze → `01`. BM recovery → `03`. 1772103 / `--create-pbia` → `04`. PBIA token type → `meta-ads/13` §5. Ad-copy unicode → `07`. A&V / no-path geos → `09`/`10`. DLO language layers → `07`.
+Reviewed 2026-09-04. Muse pass 2026-09-04. **Unmeasured.** Freeze → `01`. BM recovery → `03`. 1772103 / PBIA → `04`. PBIA token type → `meta-ads/13` §5. Ad-copy unicode → `07`. A&V / no-path geos → `09`/`10`. DLO language layers → `07`.
 
 This file is how the **Page identity** is filled and whether it moves with GEO. Ad-set geo/language is not a Page edit. Vertical gates (casino A&V) are not skipped by a “clean” Page.
 
@@ -107,7 +107,11 @@ Share blockers: paid **Meta Verified badge** on Page/IG blocks partner assign un
 
 ## PBIA
 
-`POST|GET /{page_id}/page_backed_instagram_accounts` — Page token, ≥`ADVERTISER`, one per Page, idempotent. `metaops doctor --create-pbia`. 190 / 1772103 → `04` / `13`.
+🔺 `GET /{page_id}/page_backed_instagram_accounts` is dead — removed from the Page schema (last 200 2025-04-09 per Wayback Machine; docs page now 404 [developers.facebook.com/docs/graph-api/reference/page/page_backed_instagram_accounts/, checked 2026-09-22]), no changelog entry across v23.0–v26.0 Graph API changelogs or the Marketing API changelog. Returns `(#100) Tried accessing nonexisting field (page_backed_instagram_accounts)` on v23.0 and v26.0 with a valid Page token, even on a Page that genuinely has a PBIA — don’t use it to check existence. 🔺 The prose guide [developers.facebook.com/documentation/ads-commerce/instagram/ads-api/guides/pages-ig-account] is still live and still tells you to call this dead edge — stale, contradicts the current Page node schema, will mislead.
+
+**Check instead**: `GET /v26.0/{page_id}?fields=instagram_business_account,connected_instagram_account,connected_page_backed_instagram_account` — works with Page token or user token; any of the three keys present = IG-ready. `connected_page_backed_instagram_account` (type IGUser) is the schema's current replacement field, alongside the pre-existing `instagram_business_account` and `connected_instagram_account`. Verified live 2026-09-22, Page `1137508402790131`: dead edge returned nothing usable, field check returned `connected_page_backed_instagram_account: {id: 17841424282069577}` — the PBIA existed the whole time, the old edge just couldn't see it. `scripts/asset_graph.py` updated 2026-09-22 to this field check; the `page_instagram` result is now a report, not a blocking check — a PBIA is only needed for INSTAGRAM placements; a Facebook-only buy is valid on Meta's side, but `launch.py` rejects specs without IG placements (`04`), so here no PBIA = no launch.
+
+Creation via API is **dead**: `POST /{page_id}/page_backed_instagram_accounts` is deprecated for all versions since 2025-04-21 (v22.0 changelog) and returns `(#10) Permission Denied` (field 2026-09-26, EAAB with page token). **Create it in the UI** before launch: persona's profile → Ads Manager → new ad draft → Identity → Instagram account → **Use Facebook Page** → discard the draft. The PBIA exists immediately (field-verified 2026-09-26) and the API can then use it. Instagram placements are mandatory, so no PBIA = no launch. 190 / 1772103 → `04` / `meta-ads/13` §5.
 
 **User-owned ad account + page-connected IG → PBIA illegal on the creative.** Use `instagram_accounts` id. **BM-owned ad accounts: restriction does not apply.** [official pages-ig-account, 2025-09-17]. Graph rejecting a real PBIA id on that combo → swap to the connected IG id; don’t invent a public error string.
 

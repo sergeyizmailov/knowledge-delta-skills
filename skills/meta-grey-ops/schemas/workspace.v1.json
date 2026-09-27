@@ -36,7 +36,7 @@
     "profile": {
       "type": "object",
       "required": [
-        "business_id", "app_id", "system_user_id", "ad_account_id", "page_id",
+        "business_id", "ad_account_id", "page_id",
         "dataset_id", "currency", "timezone"
       ],
       "properties": {
@@ -49,6 +49,7 @@
         "dataset_id": {"type": "string", "pattern": "^[0-9]+$"},
         "catalog_id": {"type": "string", "pattern": "^[0-9]+$"},
         "feed_id": {"type": "string", "pattern": "^[0-9]+$"},
+        "token_kind": {"type": "string", "enum": ["system_user", "user", "auto"]},
         "product_sets": {
           "type": "object",
           "propertyNames": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"},

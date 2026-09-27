@@ -153,12 +153,33 @@ def _business_assets(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str,
 # param_types: name, currency, timezone_id, end_advertiser, media_agency, partner,
 # funding_id (plus invoice/invoice_group_id/invoicing_emails/io/po_number/
 # ad_account_created_from_bm_flag, not exposed here — no billing surface, 03).
+def _find_asset_by_name(rows: list[dict], name: str) -> dict | None:
+    """Name-dedup for provisioning creates: a retry after outcome_unknown reuses the
+    object the first POST may have created instead of provisioning a twin."""
+    for row in rows:
+        if str(row.get("name") or "") == name:
+            return row
+    return None
+
+
 def _adaccount_create(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     _require_workspace(ctx, args, "business adaccount create")
     _require_confirm(ctx, args, "CREATE", "adaccount create")
     profile_name, profile = args.workspace_obj.profile(args.profile)
     ctx.require_provisioning_admin(args.workspace_obj, profile_name)
     business_id = str(profile["business_id"])
+    # A brand-new BM is capped at 1 ad account (03): a duplicate POST either fails
+    # or provisions an unwanted second account. Dedup by name first.
+    owned = _list_edge(ctx, business_id, "owned_ad_accounts", "id,name")
+    hit = _find_asset_by_name(owned, str(args.name))
+    if hit is not None:
+        account_id = ctx.graph.normalize_account(str(hit.get("id")))
+        return 0, ctx.result_envelope(
+            "business adaccount create", True, "exists",
+            data={"profile": profile_name, "business_id": business_id,
+                  "ad_account_id": account_id, "deduped": True},
+            next_action="This account already exists; add it to workspace.json instead of creating.",
+        )
     payload: dict[str, Any] = {
         "name": args.name,
         "currency": args.currency,
@@ -172,7 +193,21 @@ def _adaccount_create(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str
     ):
         if value:
             payload[key] = value
-    created = ctx.graph.post(f"{business_id}/adaccount", payload, context="create ad account")
+    try:
+        created = ctx.graph.post(f"{business_id}/adaccount", payload, context="create ad account")
+    except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name
+        if bool(getattr(exc, "outcome_unknown", False)):
+            owned = _list_edge(ctx, business_id, "owned_ad_accounts", "id,name")
+            hit = _find_asset_by_name(owned, str(args.name))
+            if hit is not None:
+                account_id = ctx.graph.normalize_account(str(hit.get("id")))
+                return 0, ctx.result_envelope(
+                    "business adaccount create", True, "reconciled",
+                    data={"profile": profile_name, "business_id": business_id,
+                          "ad_account_id": account_id, "deduped": True},
+                    next_action="The create may have applied before the break; reusing the found account.",
+                )
+        raise
     account_id = ctx.graph.normalize_account(str(created.get("id") or created.get("account_id")))
     return 0, ctx.result_envelope(
         "business adaccount create", True, "created",
@@ -196,10 +231,33 @@ def _pixel_create(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, An
     profile_name, profile = args.workspace_obj.profile(args.profile)
     ctx.require_provisioning_admin(args.workspace_obj, profile_name)
     business_id = str(profile["business_id"])
+    # Twin pixels split event history: dedup by name so a retry reuses the pixel.
+    owned = _list_edge(ctx, business_id, "owned_pixels", "id,name")
+    hit = _find_asset_by_name(owned, str(args.name))
+    if hit is not None:
+        return 0, ctx.result_envelope(
+            "business pixel create", True, "exists",
+            data={"profile": profile_name, "business_id": business_id,
+                  "dataset_id": str(hit.get("id")), "deduped": True},
+            next_action="This pixel already exists; share it instead of creating.",
+        )
     payload: dict[str, Any] = {"name": args.name}
     if args.is_crm:
         payload["is_crm"] = True
-    created = ctx.graph.post(f"{business_id}/adspixels", payload, context="create pixel")
+    try:
+        created = ctx.graph.post(f"{business_id}/adspixels", payload, context="create pixel")
+    except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name
+        if bool(getattr(exc, "outcome_unknown", False)):
+            owned = _list_edge(ctx, business_id, "owned_pixels", "id,name")
+            hit = _find_asset_by_name(owned, str(args.name))
+            if hit is not None:
+                return 0, ctx.result_envelope(
+                    "business pixel create", True, "reconciled",
+                    data={"profile": profile_name, "business_id": business_id,
+                          "dataset_id": str(hit.get("id")), "deduped": True},
+                    next_action="The create may have applied before the break; reusing the found pixel.",
+                )
+        raise
     dataset_id = str(created.get("id"))
     return 0, ctx.result_envelope(
         "business pixel create", True, "created",
@@ -280,6 +338,10 @@ def _pixel_shared(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, An
 # _encode() json.dumps's a Python list exactly once (same contract probe.py's
 # CAPI probe already relies on for an empty `data` array).
 def _capi_test(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
+    # Duplicate-safe by design (no in-flight needed): a CAPI test event carries a
+    # test_event_code and a fixed dummy identity — it lands in Events Manager "Test
+    # events" only, never in delivery. Re-posting the same payload after
+    # outcome_unknown just sends the same test ping twice.
     _require_workspace(ctx, args, "business capi test")
     profile_name, profile = args.workspace_obj.profile(args.profile)
     dataset_id = str(profile["dataset_id"])
@@ -312,6 +374,8 @@ def _capi_test(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]
 # Params verified 2026-09-03 (SDK 26.0.1): Business.create_business_user param_types
 # are email, invited_user_type, role, tasks; BusinessUser.Role enum includes ADMIN and
 # EMPLOYEE among others — this command exposes only those two per spec.
+# Duplicate-safe by design: re-inviting the same email/role is an idempotent share
+# (no spend, no twin object) — safe to retry after outcome_unknown with the same payload.
 def _user_invite(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     _require_workspace(ctx, args, "business user invite")
     _require_confirm(ctx, args, "SHARE", "user invite")
@@ -333,6 +397,8 @@ def _user_invite(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any
 # param_types — tasks, user — with NO `business` field (that field exists only on the
 # separate /agencies edge, used by partner share below). This corrects the initial
 # task assumption that assigned_users also took `business`.
+# Duplicate-safe by design: assigning the same (user, tasks) twice converges to the
+# same grant — safe to retry after outcome_unknown with the identical payload.
 def _user_assign(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     _require_workspace(ctx, args, "business user assign")
     _require_confirm(ctx, args, "SHARE", "user assign")
@@ -357,6 +423,8 @@ def _user_assign(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any
 # permitted_tasks — at the SAME edge name /agencies. Pixel has no separate
 # /shared_agencies edge (AdsPixel.create_shared_agency does not exist in this SDK);
 # /agencies is the one partner-share edge for all three asset kinds.
+# Duplicate-safe by design: sharing the same (business, tasks) twice converges —
+# safe to retry after outcome_unknown with the identical payload.
 def _partner_share(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     _require_workspace(ctx, args, "business partner share")
     _require_confirm(ctx, args, "SHARE", "partner share")

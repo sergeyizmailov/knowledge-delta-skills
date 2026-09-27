@@ -2,6 +2,9 @@
 """Offline contract tests for cmd_operate.py. No network or real credentials."""
 
 from __future__ import annotations
+import os as _os, tempfile as _tempfile
+_os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
+_os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
 import json
 import os
@@ -194,7 +197,7 @@ class MonitorTelegramTests(unittest.TestCase):
         )
         with mock.patch.object(metaops, "run_child", side_effect=fake_run_child), \
              mock.patch.object(metaops, "echo_child", lambda c: None), \
-             mock.patch.object(metaops.graph, "session", return_value=FakeSession()):
+             mock.patch.object(metaops.graph, "plain_session", return_value=FakeSession()):
             code, payload = cmd_operate.command_monitor(args, metaops)
 
         self.assertEqual(code, 1)
@@ -265,10 +268,25 @@ class ConfirmLiteralTests(unittest.TestCase):
         args = make_args(
             workspace_obj=self.workspace, page_mode="set", page=None,
             avatar=None, cover=None, about=None, website=None, confirm="PAGE",
+            clear_website=False, remove_cover=False,
         )
         with mock.patch.object(metaops, "run_child", side_effect=AssertionError("must not run")):
             with self.assertRaises(metaops.MetaOpsError):
                 cmd_operate.command_page(args, metaops)
+
+    def test_page_set_clear_website_and_remove_cover_reach_the_child(self):
+        args = make_args(
+            workspace_obj=self.workspace, page_mode="set", page=None,
+            avatar=None, cover=None, about=None, website=None, confirm="PAGE",
+            clear_website=True, remove_cover=True,
+        )
+        with mock.patch.object(metaops, "run_child",
+                               return_value=metaops.ChildResult(["page.py"], 0, "{}", "")) as child:
+            code, _ = cmd_operate.command_page(args, metaops)
+        self.assertEqual(code, 0)
+        argv = child.call_args[0][1]
+        self.assertIn("--clear-website", argv)
+        self.assertIn("--remove-cover", argv)
 
 
 class LeaderboardTests(unittest.TestCase):

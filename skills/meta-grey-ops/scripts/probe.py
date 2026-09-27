@@ -80,6 +80,13 @@ def gate_token_debug(r: Report) -> None:
         d = graph.get("debug_token", params={"input_token": graph.token()}, context="debug_token")["data"]
     except graph.GraphError as e:
         r.add("token debug", WARN, f"debug_token unavailable for this token: {e}")
+        # Scraped first-party tokens can't self-debug; GET /app still names the minting app
+        # (119211728144504 Power Editor = EAAB launch token; 515496645328243 Products = EAAH).
+        try:
+            app = graph.get("app", params={"fields": "id,name"}, context="token app")
+            r.add("token app", PASS, f"{app.get('name')} ({app.get('id')})", app)
+        except graph.GraphError as e2:
+            r.add("token app", WARN, str(e2))
         return
     exp = d.get("expires_at")
     life = "never" if exp == 0 else str(exp)
@@ -257,28 +264,42 @@ def gate_page_and_pbia(r: Report, page_id: str, create: bool) -> str | None:
         r.add("page access token", FAIL, f"{e} — needs >=ADVERTISER role on the Page", e.as_dict())
         return None
 
+    # The `page_backed_instagram_accounts` EDGE was removed from the Page schema after
+    # 2025-04 with no changelog entry (its reference page is a 404; the edge is absent from
+    # the live Page node schema, while the older prose guide still tells you to call it).
+    # Reading it now returns (#100) "Tried accessing nonexisting field" on every version,
+    # even on Pages that DO have a PBIA. The schema replacement is the to-one field
+    # `connected_page_backed_instagram_account`; `instagram_business_account` and
+    # `connected_instagram_account` are the two other ways a Page can be Instagram-ready.
+    # Verified live 2026-09-22 (`18`).
     try:
-        existing = graph.call(
+        node = graph.call(
             "GET",
-            f"{page_id}/page_backed_instagram_accounts",
+            page_id,
+            params={"fields": "instagram_business_account,connected_instagram_account,"
+                              "connected_page_backed_instagram_account"},
             token_override=ptoken,
             context="pbia read",
-        ).get("data", [])
+        )
     except graph.GraphError as e:
         r.add("PBIA", FAIL, str(e), e.as_dict())
         return None
 
-    if existing:
-        pbia = existing[0]["id"]
-        r.add("PBIA", PASS, f"instagram_user_id={pbia}", pbia)
-        return pbia
+    for key in ("connected_page_backed_instagram_account", "instagram_business_account",
+                "connected_instagram_account"):
+        node_value = node.get(key) or {}
+        if node_value.get("id"):
+            pbia = node_value["id"]
+            r.add("PBIA", PASS, f"{key} instagram_user_id={pbia}", pbia)
+            return pbia
 
     if not create:
+        # Instagram placements are mandatory (operator rule 2026-09-26), so no PBIA blocks.
         r.add(
             "PBIA",
             FAIL,
-            "none exists. Ads with Instagram placements will fail 1772103 at POST /ads. "
-            "Re-run with --create-pbia. Do NOT 'fix' it with publisher_platforms=['facebook'].",
+            "none exists; Instagram placements are mandatory. The API create is deprecated (#10): "
+            "create it in the UI (Ads Manager > ad draft > Identity > Instagram account > Use Facebook Page, then discard the draft, 18).",
         )
         return None
 

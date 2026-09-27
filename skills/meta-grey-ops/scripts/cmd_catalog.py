@@ -112,6 +112,15 @@ def _paginate(ctx: Any, path: str, fields: str, limit: int | None = None) -> lis
 # --------------------------------------------------------------------------- catalog
 
 
+def _find_by_name(rows: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    """Name-dedup: a retry after a transport break (outcome_unknown) must find the
+    object the first POST may have created instead of posting a duplicate."""
+    for row in rows:
+        if str(row.get("name") or "") == name:
+            return row
+    return None
+
+
 def command_catalog_create(args: argparse.Namespace, ctx: Any) -> tuple[int, dict[str, Any]]:
     profile_name, profile = _profile(ctx, args)
     _require_confirm(ctx, args)
@@ -119,8 +128,42 @@ def command_catalog_create(args: argparse.Namespace, ctx: Any) -> tuple[int, dic
     business_id = str(profile.get("business_id") or "")
     if not business_id:
         raise ctx.MetaOpsError(f"profile {profile_name} has no business_id")
+    # Dedup by name BEFORE posting: a second run after an outcome_unknown break
+    # reuses the existing catalog instead of creating a twin asset.
+    hit = _find_by_name(
+        _paginate(ctx, f"{business_id}/owned_product_catalogs", CATALOG_FIELDS), str(args.name)
+    )
+    if hit is not None:
+        catalog_id = str(hit.get("id"))
+        return 0, ctx.result_envelope(
+            "catalog create", True, "exists",
+            data={"profile": profile_name, "business_id": business_id, "catalog_id": catalog_id,
+                  "name": args.name, "vertical": args.vertical, "provisioning": provisioning,
+                  "deduped": True},
+            next_action=(
+                f"Put \"catalog_id\": \"{catalog_id}\" into profiles.{profile_name} in workspace.json, "
+                "then run assets verify --scope all."
+            ),
+        )
     data = {"name": args.name, "vertical": args.vertical}
-    resp = ctx.graph.post(f"{business_id}/owned_product_catalogs", data, context="catalog create")
+    try:
+        resp = ctx.graph.post(f"{business_id}/owned_product_catalogs", data, context="catalog create")
+    except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name, else re-raise
+        unknown = bool(getattr(exc, "outcome_unknown", False))
+        if unknown:
+            hit = _find_by_name(
+                _paginate(ctx, f"{business_id}/owned_product_catalogs", CATALOG_FIELDS),
+                str(args.name),
+            )
+            if hit is not None:
+                catalog_id = str(hit.get("id"))
+                return 0, ctx.result_envelope(
+                    "catalog create", True, "reconciled",
+                    data={"profile": profile_name, "business_id": business_id,
+                          "catalog_id": catalog_id, "deduped": True},
+                    next_action="The create may have applied before the break; reusing the found object.",
+                )
+        raise
     catalog_id = str(resp["id"])
     return 0, ctx.result_envelope(
         "catalog create", True, "created",
@@ -183,10 +226,40 @@ def command_catalog_feed_create(args: argparse.Namespace, ctx: Any) -> tuple[int
     schedule: dict[str, Any] = {"url": args.url, "interval": interval}
     if args.hour is not None:
         schedule["hour"] = args.hour
+    # Twin feeds poll the same URL on the same schedule: dedup by name so a retry
+    # after outcome_unknown reuses the feed instead of scheduling a second fetch.
+    hit = _find_by_name(
+        _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS), str(args.name)
+    )
+    if hit is not None:
+        feed_id = str(hit.get("id"))
+        return 0, ctx.result_envelope(
+            "catalog feed create", True, "exists",
+            data={"profile": profile_name, "catalog_id": catalog_id, "feed_id": feed_id,
+                  "schedule": schedule, "deduped": True},
+            next_action=(
+                f"Put \"feed_id\": \"{feed_id}\" into profiles.{profile_name} in workspace.json, "
+                "then metaops feed sync to force an immediate fetch instead of waiting for the schedule."
+            ),
+        )
     data: dict[str, Any] = {"name": args.name, "schedule": schedule}
     if args.update_only:
         data["deletion_enabled"] = False
-    resp = ctx.graph.post(f"{catalog_id}/product_feeds", data, context="catalog feed create")
+    try:
+        resp = ctx.graph.post(f"{catalog_id}/product_feeds", data, context="catalog feed create")
+    except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name
+        if bool(getattr(exc, "outcome_unknown", False)):
+            hit = _find_by_name(
+                _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS), str(args.name)
+            )
+            if hit is not None:
+                return 0, ctx.result_envelope(
+                    "catalog feed create", True, "reconciled",
+                    data={"profile": profile_name, "catalog_id": catalog_id,
+                          "feed_id": str(hit.get("id")), "deduped": True},
+                    next_action="The create may have applied before the break; reusing the found feed.",
+                )
+        raise
     feed_id = str(resp["id"])
     return 0, ctx.result_envelope(
         "catalog feed create", True, "created",
@@ -243,8 +316,37 @@ def command_catalog_set_create(args: argparse.Namespace, ctx: Any) -> tuple[int,
         new_filter = {"retailer_id": {"is_any": ids}}
     # filter is a dict here; graph.py's _encode() JSON-encodes it exactly once on the
     # wire (double-encoding it ourselves would silently no-op the create's filter — 04).
+    # Twin sets with the same name would split the catalog audience: dedup by name.
+    hit = _find_by_name(
+        _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS), str(args.name)
+    )
+    if hit is not None:
+        set_id = str(hit.get("id"))
+        return 0, ctx.result_envelope(
+            "catalog set create", True, "exists",
+            data={"profile": profile_name, "catalog_id": catalog_id, "set_id": set_id,
+                  "filter": new_filter, "deduped": True},
+            next_action=(
+                f"Put \"<alias>\": \"{set_id}\" into profiles.{profile_name}.product_sets, "
+                "then assets verify --scope all."
+            ),
+        )
     data = {"name": args.name, "filter": new_filter}
-    resp = ctx.graph.post(f"{catalog_id}/product_sets", data, context="catalog set create")
+    try:
+        resp = ctx.graph.post(f"{catalog_id}/product_sets", data, context="catalog set create")
+    except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name
+        if bool(getattr(exc, "outcome_unknown", False)):
+            hit = _find_by_name(
+                _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS), str(args.name)
+            )
+            if hit is not None:
+                return 0, ctx.result_envelope(
+                    "catalog set create", True, "reconciled",
+                    data={"profile": profile_name, "catalog_id": catalog_id,
+                          "set_id": str(hit.get("id")), "deduped": True},
+                    next_action="The create may have applied before the break; reusing the found set.",
+                )
+        raise
     set_id = str(resp["id"])
     return 0, ctx.result_envelope(
         "catalog set create", True, "created",
@@ -326,6 +428,13 @@ def _batch_status_item(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def command_catalog_products_batch(args: argparse.Namespace, ctx: Any) -> tuple[int, dict[str, Any]]:
+    # Duplicate-safety (documented, no in-flight needed): items_batch is keyed by
+    # item `id` (retailer id). Re-posting the same file with UPDATE+allow_upsert
+    # rewrites the same rows, DELETE re-deletes them, CREATE with the same ids
+    # collides on the same keys — no money moves, no twin objects. A retry after
+    # outcome_unknown therefore reuses the same handle semantics: poll the returned
+    # handle; if the POST itself broke unknown, re-post the identical payload and
+    # the catalog converges to the same state.
     profile_name, profile = _profile(ctx, args)
     catalog_id = _catalog_id(profile, ctx)
     if args.confirm != "BATCH":
@@ -333,6 +442,16 @@ def command_catalog_products_batch(args: argparse.Namespace, ctx: Any) -> tuple[
     if args.method not in BATCH_METHODS:
         raise ctx.MetaOpsError(f"--method must be one of {sorted(BATCH_METHODS)}")
     items = _load_batch_items(args.file, ctx)
+    # Same gate as assets swap / feed swap: an edited item shows on every set that holds it (and may
+    # join rule-based sets). Hold only while an ad on such a set is in review; never wait for delivery.
+    import swapgate
+    gate = swapgate.item_gate(profile["ad_account_id"], [str(i["id"]) for i in items],
+                              paused_ok=getattr(args, "paused_ok", False))
+    if gate["verdict"] != "ready" and not getattr(args, "force", False):
+        raise ctx.MetaOpsError(
+            f"catalog products batch: swap gate {gate['verdict']}: {(gate['waiting'] + gate['blockers'])[:5]}. "
+            "Wait for approval of the ads on those sets (then run at once), or --force."
+        )
     requests = [{"method": args.method, "data": item} for item in items]
     data: dict[str, Any] = {
         "item_type": "PRODUCT_ITEM",
@@ -447,5 +566,8 @@ def register(sub: Any, ctx: Any) -> None:
     action.add_argument("--file", required=True, help="JSON array of item objects")
     action.add_argument("--method", required=True, choices=sorted(BATCH_METHODS))
     action.add_argument("--wait", type=int, default=120, help="seconds to poll check_batch_request_status")
+    action.add_argument("--force", action="store_true",
+                        help="skip the review gate (ads on sets holding these items may be in review)")
+    action.add_argument("--paused-ok", action="store_true", help="treat paused ads on affected sets as approved")
     action.add_argument("--confirm", required=True, help="must be literal BATCH")
     action.set_defaults(handler=lambda a: command_catalog_products_batch(a, ctx))

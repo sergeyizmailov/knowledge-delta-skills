@@ -2,8 +2,13 @@
 """Offline contract tests for cmd_edit.py. No network or real credentials."""
 
 from __future__ import annotations
+import os as _os, tempfile as _tempfile
+_os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
+_os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -14,6 +19,8 @@ from unittest import mock
 import clone
 import cmd_edit
 import edit
+import edit_tags
+import edit_targeting
 import metaops
 import rules
 
@@ -280,6 +287,471 @@ class CmdEditTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(run_child.call_count, 1)
 
+    # --- edit targeting ---------------------------------------------------
+
+    def test_edit_targeting_requires_scalar_flag(self) -> None:
+        args = self.parse(["edit", "targeting", "--ids", "1", "--confirm", "TARGETING"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_targeting_requires_confirm_literal(self) -> None:
+        args = self.parse(["edit", "targeting", "--ids", "1", "--user-os", "iOS"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_targeting_confirm_required_even_under_dry_run(self) -> None:
+        args = self.parse(["edit", "targeting", "--ids", "1", "--user-os", "iOS", "--dry-run"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_targeting_ids_builds_args(self) -> None:
+        args = self.parse([
+            "edit", "targeting", "--ids", "1,2", "--user-os", "iOS,Android", "--confirm", "TARGETING",
+        ])
+        with mock.patch.object(
+            metaops, "run_child",
+            return_value=fake_child('{"schema": "edit_targeting.result/v1", "ok": true}\n'),
+        ) as run_child:
+            code, payload = args.handler(args)
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        script, child_args, _timeout = run_child.call_args[0]
+        self.assertEqual(script, "edit_targeting.py")
+        self.assertEqual(child_args, [
+            "--ids", "1,2", "--user-os", "iOS,Android", "--confirm", "TARGETING",
+            "--expected-account", "act_1",
+        ])
+
+    def test_edit_targeting_dry_run_passes_dry_run_flag(self) -> None:
+        args = self.parse([
+            "edit", "targeting", "--ids", "1", "--user-os", "iOS", "--confirm", "TARGETING", "--dry-run",
+        ])
+        with mock.patch.object(
+            metaops, "run_child",
+            return_value=fake_child('{"schema": "edit_targeting.result/v1", "ok": true}\n'),
+        ) as run_child:
+            args.handler(args)
+        _script, child_args, _timeout = run_child.call_args[0]
+        self.assertIn("--dry-run", child_args)
+
+    def test_edit_targeting_state_account_mismatch_refused(self) -> None:
+        state_path = self.root / "state.json"
+        state_path.write_text(json.dumps({"spec_account": "act_2", "objects": {}}), encoding="utf-8")
+        args = self.parse([
+            "edit", "targeting", "--state", str(state_path), "--user-os", "iOS", "--confirm", "TARGETING",
+        ])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_targeting_all_routes_through_profile_account(self) -> None:
+        args = self.parse(["edit", "targeting", "--all", "--user-os", "iOS", "--confirm", "TARGETING"])
+        with mock.patch.object(
+            metaops, "run_child",
+            return_value=fake_child('{"schema": "edit_targeting.result/v1", "ok": true}\n'),
+        ) as run_child:
+            args.handler(args)
+        _script, child_args, _timeout = run_child.call_args[0]
+        self.assertEqual(child_args, [
+            "--account", "act_1", "--all", "--user-os", "iOS", "--confirm", "TARGETING",
+            "--expected-account", "act_1",
+        ])
+
+    def test_edit_targeting_child_failure_nonzero_exit(self) -> None:
+        args = self.parse(["edit", "targeting", "--ids", "1", "--user-os", "iOS", "--confirm", "TARGETING"])
+        with mock.patch.object(
+            metaops, "run_child",
+            return_value=fake_child("boom\n", returncode=1),
+        ):
+            code, payload = args.handler(args)
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+
+    # --- edit_targeting.py (child script; read-modify-write contract) -----
+
+    def test_edit_targeting_child_preserves_untouched_keys_no_delta_post(self) -> None:
+        argv = [
+            "edit_targeting.py", "--ids", "42", "--user-os", "iOS,Android", "--confirm", "TARGETING",
+            "--expected-account", "act_1",
+        ]
+        current_targeting = {
+            "geo_locations": {"countries": ["US"]},
+            "custom_audiences": [{"id": "555"}],
+            "user_os": ["Android"],
+        }
+        read_back = dict(current_targeting, user_os=["iOS", "Android"])
+        with (
+            mock.patch.object(edit_targeting.sys, "argv", argv),
+            mock.patch.object(edit_targeting.graph, "require_write_authority"),
+            mock.patch.object(
+                edit_targeting.graph, "get",
+                side_effect=[
+                    {"id": "42", "name": "AS1", "targeting": current_targeting, "account_id": "1"},
+                    {"id": "42", "name": "AS1", "targeting": read_back},
+                ],
+            ),
+            mock.patch.object(edit_targeting.graph, "post", return_value={}) as post,
+        ):
+            self.assertEqual(edit_targeting.main(), 0)
+        post.assert_called_once()
+        posted_id, posted_payload = post.call_args.args[0], post.call_args.args[1]
+        self.assertEqual(posted_id, "42")
+        # The whole targeting object travels every time — never a bare {"user_os": [...]}.
+        self.assertEqual(posted_payload["targeting"]["geo_locations"], {"countries": ["US"]})
+        self.assertEqual(posted_payload["targeting"]["custom_audiences"], [{"id": "555"}])
+        self.assertEqual(posted_payload["targeting"]["user_os"], ["iOS", "Android"])
+        self.assertEqual(set(posted_payload["targeting"]), set(current_targeting))
+
+    def test_edit_targeting_child_dry_run_writes_nothing(self) -> None:
+        argv = [
+            "edit_targeting.py", "--ids", "42", "--user-os", "iOS", "--confirm", "TARGETING", "--dry-run",
+        ]
+        current_targeting = {"geo_locations": {"countries": ["US"]}, "user_os": ["Android"]}
+        with (
+            mock.patch.object(edit_targeting.sys, "argv", argv),
+            mock.patch.object(edit_targeting.graph, "require_write_authority"),
+            mock.patch.object(
+                edit_targeting.graph, "get",
+                return_value={"id": "42", "name": "AS1", "targeting": current_targeting, "account_id": "1"},
+            ),
+            mock.patch.object(edit_targeting.graph, "post") as post,
+        ):
+            self.assertEqual(edit_targeting.main(), 0)
+        post.assert_not_called()
+
+    def test_edit_targeting_child_refuses_write_when_get_fails(self) -> None:
+        argv = [
+            "edit_targeting.py", "--ids", "42", "--user-os", "iOS", "--confirm", "TARGETING",
+        ]
+        with (
+            mock.patch.object(edit_targeting.sys, "argv", argv),
+            mock.patch.object(edit_targeting.graph, "require_write_authority"),
+            mock.patch.object(
+                edit_targeting.graph, "get",
+                side_effect=edit_targeting.graph.GraphError(
+                    500, {"error": {"message": "boom", "code": 1}}, "read 42",
+                ),
+            ),
+            mock.patch.object(edit_targeting.graph, "post") as post,
+        ):
+            self.assertEqual(edit_targeting.main(), 1)
+        post.assert_not_called()
+
+    def test_edit_targeting_child_rejects_id_outside_expected_account(self) -> None:
+        argv = [
+            "edit_targeting.py", "--ids", "42", "--user-os", "iOS", "--confirm", "TARGETING",
+            "--expected-account", "act_1",
+        ]
+        foreign = {"id": "42", "name": "foreign", "targeting": {"geo_locations": {}}, "account_id": "2"}
+        with (
+            mock.patch.object(edit_targeting.sys, "argv", argv),
+            mock.patch.object(edit_targeting.graph, "require_write_authority"),
+            mock.patch.object(edit_targeting.graph, "get", return_value=foreign),
+            mock.patch.object(edit_targeting.graph, "post") as post,
+        ):
+            self.assertEqual(edit_targeting.main(), 1)
+        post.assert_not_called()
+
+    def test_edit_targeting_child_partial_failure_nonzero_exit(self) -> None:
+        argv = [
+            "edit_targeting.py", "--ids", "42,43", "--user-os", "iOS", "--confirm", "TARGETING",
+        ]
+        good = {"id": "42", "name": "AS1", "targeting": {"geo_locations": {}}, "account_id": "1"}
+
+        def get_side_effect(oid, **_kw):
+            if oid == "42":
+                return good
+            raise edit_targeting.graph.GraphError(500, {"error": {"message": "boom", "code": 1}}, "read 43")
+
+        with (
+            mock.patch.object(edit_targeting.sys, "argv", argv),
+            mock.patch.object(edit_targeting.graph, "require_write_authority"),
+            mock.patch.object(edit_targeting.graph, "get", side_effect=get_side_effect),
+            mock.patch.object(edit_targeting.graph, "post", return_value={}),
+        ):
+            self.assertEqual(edit_targeting.main(), 1)
+
+    # --- edit tags ---------------------------------------------------------
+
+    def test_edit_tags_requires_one_of_url_tags_or_template_url(self) -> None:
+        args = self.parse(["edit", "tags", "--ids", "1", "--confirm", "TAGS"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_tags_requires_confirm_literal(self) -> None:
+        args = self.parse(["edit", "tags", "--ids", "1", "--url-tags", "sub1={{ad.id}}"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_tags_builds_args_with_both_flags(self) -> None:
+        args = self.parse([
+            "edit", "tags", "--ids", "1,2", "--url-tags", "sub1={{ad.id}}",
+            "--template-url", "https://x.example/?id={{product.id}}", "--confirm", "TAGS",
+        ])
+        with mock.patch.object(
+            metaops, "run_child",
+            return_value=fake_child('{"schema": "edit_tags.result/v1", "ok": true}\n'),
+        ) as run_child:
+            code, payload = args.handler(args)
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertIn("first-publish snapshot", payload["next_action"])
+        script, child_args, _timeout = run_child.call_args[0]
+        self.assertEqual(script, "edit_tags.py")
+        self.assertEqual(child_args, [
+            "--ids", "1,2", "--url-tags", "sub1={{ad.id}}",
+            "--template-url", "https://x.example/?id={{product.id}}",
+            "--confirm", "TAGS", "--expected-account", "act_1",
+        ])
+
+    def test_edit_tags_child_failure_nonzero_exit(self) -> None:
+        args = self.parse(["edit", "tags", "--ids", "1", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS"])
+        with mock.patch.object(
+            metaops, "run_child",
+            return_value=fake_child("boom\n", returncode=1),
+        ):
+            code, payload = args.handler(args)
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+
+    # --- edit_tags.py (child script; clone-and-swap, catalog handling) -----
+
+    def test_edit_tags_child_catalog_creative_skipped_without_template_url(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        catalog_ad = {
+            "id": "77", "name": "Catalog Ad", "account_id": "1",
+            "creative": {"id": "500", "product_set_id": "999", "name": "Catalog Creative"},
+        }
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=catalog_ad),
+            mock.patch.object(edit_tags.graph, "post") as post,
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        post.assert_not_called()
+
+    def test_edit_tags_child_catalog_creative_uses_template_url_spec(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--template-url", "https://x.example/?id={{product.id}}",
+            "--confirm", "TAGS",
+        ]
+        catalog_ad = {
+            "id": "77", "name": "Catalog Ad", "account_id": "1",
+            "creative": {"id": "500", "product_set_id": "999", "name": "Catalog Creative"},
+        }
+        readback = {
+            "name": "Catalog Ad",
+            "creative": {"id": "600", "template_url_spec": {"web": {"url": "https://x.example/?id={{product.id}}"}}},
+        }
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", side_effect=[catalog_ad, readback]),
+            mock.patch.object(edit_tags.graph, "post", side_effect=[{"id": "600"}, {}]) as post,
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        self.assertEqual(post.call_count, 2)
+        create_path, create_payload = post.call_args_list[0].args[0], post.call_args_list[0].args[1]
+        self.assertEqual(create_path, "act_1/adcreatives")
+        self.assertEqual(create_payload["template_url_spec"], {"web": {"url": "https://x.example/?id={{product.id}}"}})
+        self.assertNotIn("url_tags", create_payload)
+        swap_id, swap_payload = post.call_args_list[1].args[0], post.call_args_list[1].args[1]
+        self.assertEqual(swap_id, "77")
+        self.assertEqual(swap_payload, {"creative": {"creative_id": "600"}})
+
+    def test_edit_tags_child_non_catalog_writes_url_tags_via_clone_and_swap(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        plain_ad = {
+            "id": "77", "name": "Plain Ad", "account_id": "1",
+            "creative": {
+                "id": "500", "name": "Plain Creative",
+                "object_story_spec": {"page_id": "2", "link_data": {"link": "https://x.example"}},
+                "url_tags": "sub1=OLD",
+            },
+        }
+        readback = {"name": "Plain Ad", "creative": {"id": "600", "url_tags": "sub1={{ad.id}}"}}
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", side_effect=[plain_ad, readback]),
+            mock.patch.object(edit_tags.graph, "post", side_effect=[{"id": "600"}, {}]) as post,
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        create_path, create_payload = post.call_args_list[0].args[0], post.call_args_list[0].args[1]
+        self.assertEqual(create_path, "act_1/adcreatives")
+        self.assertEqual(create_payload["url_tags"], "sub1={{ad.id}}")
+        self.assertEqual(create_payload["object_story_spec"], plain_ad["creative"]["object_story_spec"])
+        swap_id, swap_payload = post.call_args_list[1].args[0], post.call_args_list[1].args[1]
+        self.assertEqual(swap_id, "77")
+        self.assertEqual(swap_payload, {"creative": {"creative_id": "600"}})
+
+    def test_edit_tags_child_skips_creative_with_authorization_category(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        political_ad = {
+            "id": "77", "name": "Political Ad", "account_id": "1",
+            "creative": {
+                "id": "500", "name": "Political Creative",
+                "object_story_spec": {"page_id": "2", "link_data": {"link": "https://x.example"}},
+                "authorization_category": "POLITICAL",
+            },
+        }
+        buf = io.StringIO()
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=political_ad),
+            mock.patch.object(edit_tags.graph, "post") as post,
+            contextlib.redirect_stdout(buf),
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        post.assert_not_called()
+        row = cmd_edit._parse_last_json_line(buf.getvalue())["results"][0]
+        self.assertEqual(row["fields"], ["authorization_category"])
+        self.assertIn("authorization_category", row["reason"])
+        self.assertTrue(row["skipped"])
+
+    def test_edit_tags_child_skips_creative_with_object_story_id(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        boosted_post_ad = {
+            "id": "77", "name": "Boosted Ad", "account_id": "1",
+            "creative": {"id": "500", "name": "Boosted Creative", "object_story_id": "2_12345"},
+        }
+        buf = io.StringIO()
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=boosted_post_ad),
+            mock.patch.object(edit_tags.graph, "post") as post,
+            contextlib.redirect_stdout(buf),
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        post.assert_not_called()
+        row = cmd_edit._parse_last_json_line(buf.getvalue())["results"][0]
+        self.assertEqual(row["fields"], ["object_story_id"])
+        self.assertIn("object_story_id", row["reason"])
+
+    def test_edit_tags_child_skips_creative_with_platform_customizations(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        stories_ad = {
+            "id": "77", "name": "Stories Ad", "account_id": "1",
+            "creative": {
+                "id": "500", "name": "Stories Creative",
+                "object_story_spec": {"page_id": "2", "link_data": {"link": "https://x.example"}},
+                "platform_customizations": {"instagram": {"image_hash": "abc"}},
+            },
+        }
+        buf = io.StringIO()
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=stories_ad),
+            mock.patch.object(edit_tags.graph, "post") as post,
+            contextlib.redirect_stdout(buf),
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        post.assert_not_called()
+        row = cmd_edit._parse_last_json_line(buf.getvalue())["results"][0]
+        self.assertEqual(row["fields"], ["platform_customizations"])
+
+    def test_edit_tags_child_swap_failure_reports_orphaned_creative_id(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        plain_ad = {
+            "id": "77", "name": "Plain Ad", "account_id": "1",
+            "creative": {
+                "id": "500", "name": "Plain Creative",
+                "object_story_spec": {"page_id": "2", "link_data": {"link": "https://x.example"}},
+                "url_tags": "sub1=OLD",
+            },
+        }
+        buf = io.StringIO()
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=plain_ad),
+            mock.patch.object(
+                edit_tags.graph, "post",
+                side_effect=[
+                    {"id": "600"},
+                    edit_tags.graph.GraphError(500, {"error": {"message": "swap boom", "code": 1}}, "swap"),
+                ],
+            ) as post,
+            contextlib.redirect_stdout(buf),
+        ):
+            self.assertEqual(edit_tags.main(), 1)
+        self.assertEqual(post.call_count, 2)
+        row = cmd_edit._parse_last_json_line(buf.getvalue())["results"][0]
+        self.assertFalse(row["ok"])
+        self.assertEqual(row["orphaned_creative_id"], "600")
+
+    def test_edit_tags_child_dry_run_writes_nothing(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS", "--dry-run",
+        ]
+        plain_ad = {
+            "id": "77", "name": "Plain Ad", "account_id": "1",
+            "creative": {"id": "500", "object_story_spec": {"page_id": "2"}, "url_tags": "sub1=OLD"},
+        }
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=plain_ad),
+            mock.patch.object(edit_tags.graph, "post") as post,
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        post.assert_not_called()
+
+    def test_edit_tags_child_rejects_id_outside_expected_account(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+            "--expected-account", "act_1",
+        ]
+        foreign = {
+            "id": "77", "name": "foreign", "account_id": "2",
+            "creative": {"id": "500", "object_story_spec": {"page_id": "2"}},
+        }
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=foreign),
+            mock.patch.object(edit_tags.graph, "post") as post,
+        ):
+            self.assertEqual(edit_tags.main(), 1)
+        post.assert_not_called()
+
+    def test_edit_tags_child_partial_failure_nonzero_exit(self) -> None:
+        argv = [
+            "edit_tags.py", "--ids", "77,78", "--url-tags", "sub1={{ad.id}}", "--confirm", "TAGS",
+        ]
+        plain_ad = {
+            "id": "77", "name": "Plain Ad", "account_id": "1",
+            "creative": {"id": "500", "object_story_spec": {"page_id": "2"}, "url_tags": "sub1=OLD"},
+        }
+
+        def get_side_effect(oid, **_kw):
+            if oid == "77":
+                return plain_ad
+            raise edit_tags.graph.GraphError(500, {"error": {"message": "boom", "code": 1}}, "read 78")
+
+        with (
+            mock.patch.object(edit_tags.sys, "argv", argv),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", side_effect=get_side_effect),
+            mock.patch.object(edit_tags.graph, "post", side_effect=[{"id": "600"}, {}]),
+        ):
+            self.assertEqual(edit_tags.main(), 1)
+
     # --- clone -----------------------------------------------------------
 
     def test_clone_builds_positional_and_optional_args(self) -> None:
@@ -297,9 +769,12 @@ class CmdEditTests(unittest.TestCase):
         script, child_args, _timeout = run_child.call_args[0]
         self.assertEqual(script, "clone.py")
         self.assertEqual(
-            child_args,
+            child_args[:-2],
             ["campaign", "1234", "--times", "2", "--expected-account", "act_1", "--prefix", "S2|", "--start", "2030-01-01T00:00:00+00:00"],
         )
+        # A real clone always carries a resume file, keyed by the request.
+        self.assertEqual(child_args[-2], "--state")
+        self.assertIn("/clones/campaign-1234.", child_args[-1])
 
     def test_clone_requires_workspace(self) -> None:
         args = self.parse(["clone", "ad", "42"])

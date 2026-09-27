@@ -2,6 +2,9 @@
 """Offline contract tests for cmd_catalog.py. No network or real credentials."""
 
 from __future__ import annotations
+import os as _os, tempfile as _tempfile
+_os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
+_os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
 import json
 import os
@@ -66,6 +69,7 @@ class CatalogCreateTests(unittest.TestCase):
                 "require_provisioning_admin",
                 return_value={"system_user_id": "12", "role": "ADMIN"},
             ) as gate,
+            mock.patch.object(cmd_catalog, "_paginate", return_value=[]),
             mock.patch.object(metaops.graph, "post", return_value={"id": "999"}) as post,
         ):
             code, payload = cmd_catalog.command_catalog_create(args, metaops)
@@ -95,7 +99,10 @@ class CatalogFeedTests(unittest.TestCase):
     def test_feed_create_builds_schedule_object_not_prestringified(self) -> None:
         args = args_for(name="Feed", url="https://x/export?format=csv", schedule="daily",
                         hour=6, update_only=True, confirm="CREATE")
-        with mock.patch.object(metaops.graph, "post", return_value={"id": "555"}) as post:
+        with (
+            mock.patch.object(cmd_catalog, "_paginate", return_value=[]),
+            mock.patch.object(metaops.graph, "post", return_value={"id": "555"}) as post,
+        ):
             code, payload = cmd_catalog.command_catalog_feed_create(args, metaops)
         self.assertEqual(code, 0)
         self.assertEqual(post.call_args.args[0], "100/product_feeds")
@@ -127,7 +134,10 @@ class CatalogFeedTests(unittest.TestCase):
 class CatalogSetTests(unittest.TestCase):
     def test_set_create_encodes_filter_once_as_dict(self) -> None:
         args = args_for(name="Set", filter=None, retailer_ids="a,b,c", confirm="CREATE")
-        with mock.patch.object(metaops.graph, "post", return_value={"id": "321"}) as post:
+        with (
+            mock.patch.object(cmd_catalog, "_paginate", return_value=[]),
+            mock.patch.object(metaops.graph, "post", return_value={"id": "321"}) as post,
+        ):
             code, payload = cmd_catalog.command_catalog_set_create(args, metaops)
         self.assertEqual(code, 0)
         sent = post.call_args.args[1]
@@ -161,6 +171,7 @@ class CatalogSetTests(unittest.TestCase):
             args = args_for(name="Set", filter="~/filter.json", retailer_ids=None, confirm="CREATE")
             with (
                 mock.patch.object(metaops, "resolve_input", return_value=filter_path) as resolve,
+                mock.patch.object(cmd_catalog, "_paginate", return_value=[]),
                 mock.patch.object(metaops.graph, "post", return_value={"id": "321"}),
             ):
                 cmd_catalog.command_catalog_set_create(args, metaops)

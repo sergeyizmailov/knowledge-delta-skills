@@ -41,9 +41,15 @@
             "product_set_id": "REPLACE_ME_WHITE_SET_4_ITEMS",
             "video_id": "REPLACE_ME_FROM_media.json",
             "link": "https://example-lander.tld/",
-            "message": "Primary text.",
+            "message": "-----",
             "cta": "PLAY_GAME",
-            "template_url": "https://example-lander.tld/?sub1={{ad.name}}"
+            "template_url": "https://example-lander.tld/?sub1={{ad.name}}",
+            "swap_to": [
+              "REPLACE_ME_T1",
+              "REPLACE_ME_T2",
+              "REPLACE_ME_T3",
+              "REPLACE_ME_T4"
+            ]
           }
         }
       ]

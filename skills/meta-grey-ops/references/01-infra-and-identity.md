@@ -20,6 +20,27 @@ Token type does not waive the assigned-egress rule; direct egress needs an expli
   slow, then change BOTH ends (antidetect + scripts) together.
 - Datacenter IPs = cheap/fast/risk; residential/mobile safer for the main persona.
   Agency setups usually ship a proxy — use theirs.
+- **How many personas per exit is genuinely contested. Do not let either side sound settled.**
+  - Community consensus, both languages, essentially without dissent: **one dedicated exit per
+    account**. Stated mechanism is that a shared IP across accounts is itself the linkage
+    signal Meta's Account Integrity policy describes (`07`). A research pass on 2026-09-24
+    found no source anywhere defending shared exits at scale. Note the incentive runs both
+    ways and does not explain the unanimity: proxy sellers profit from this advice, antidetect
+    vendors would profit from the opposite, and none of them take the opposite.
+  - Against it, one practitioner report: a TL running grey traffic at scale describes a buyer
+    holding **65 accounts on one proxy set** with no elevated mortality (2026-09-22). Single
+    source, one team, one account-quality tier. The obvious confound is that good accounts
+    carry bad infra for a while, so surviving on shared exits does not show shared exits are
+    safe.
+  🔺 If an operator's TL asserts the shared-exit position, that is a live disagreement with the
+  whole community, not a settled shortcut — say so plainly and let them decide, because they
+  carry the cost either way. Absent a TL ruling, follow the consensus: one exit per account.
+- What is NOT contested is how to assign them: a **fixed list** and a deterministic map, e.g.
+  row N takes entry `(N-1) % len(list)`. Every bookkeeping scheme tried instead failed —
+  a numbered slot list with an offset wrapped modulo and handed out an exit tied to a banned
+  account (field-observed 2026-09-21), and the consume-and-delete pool that replaced it ran
+  empty and blocked all profile creation (field-observed 2026-09-22). No state file, nothing to
+  run out of, nothing to reconcile, and re-running a row reproduces the same exit.
 
 ## socks5 vs socks5h (gotcha)
 
@@ -44,8 +65,9 @@ curl: `-x socks5h://user:pass@ip:port`.
   session; fix is IP/device discipline, not a setting.
 - Checkpoint (long load → logout): identity confirmation. Complete ONCE, calmly,
   from the antidetect profile — repeated failures worsen it.
-- Ad account disabled/restricted: background rate. Don't appeal fresh agency
-  accounts — replace, keep a reserve pipeline.
+- Ad account disabled/restricted: background rate. Agency/old-personal/log accounts are
+  consumables — don't appeal alone, ask TL/agency "appeal or replace"; keep a reserve pipeline
+  (`05`).
 
 ## Pre-buy / farmed-account QC [practitioner, MagicClick, 2026-08-30]
 
@@ -53,7 +75,7 @@ View-source logged-in Ads Manager HTML for `ADS_TRUST_TIER_`/`ADS_TRUSTED_TIER_`
 farmed-vs-newreg tell, **not** a spend cap (circulating dollar-tier tables are
 vendor construction, already rejected in `09`). Empty Off-Facebook activity **or**
 "Ads based on custom audiences" **or** no feed ads → likely not farmed. Empty Fan
-Page = review flag. Still judge after $30-50 spend (SKILL #5). Chrome-agent driving
+Page = review flag. Still judge after $30-50 spend (SKILL #6). Chrome-agent driving
 Ads Manager inside antidetect on rented seats → selfie/SMS/freeze risk.
 
 ## Domain / pixel rotation cadence (rotate before burn)
@@ -81,11 +103,19 @@ Accounts Center → Password and security → Where you're logged in
 `facebook.com/settings?tab=security` redirects/dies). Non-setup geos = the leak
 that flagged the persona.
 
+## Cookie liveness can't be scripted
+
+Facebook returns HTTP 400 to ANY non-browser client (curl/urllib) even through a
+healthy proxy with no cookies — it fingerprints TLS (field-observed 2026-09-21). A
+400 from a script proves nothing about cookie liveness. Do not build a checker:
+the only valid liveness test is opening the antidetect profile itself. Local API
+mechanics for driving that profile → the fuller reference `20-adspower-local-api.md`.
+
 ## Human behavior
 
 - Open FB/developers/business sites for a work persona ONLY inside its antidetect
   profile — never a daily browser.
 - No mass actions on a fresh profile: a few logins, some browsing, then work.
   Profile creation → ads day 0 is a classic ban path.
-- One action at a time when unstable. Batch API edits (rename, pause) fine;
-  profile/security edits agitate the system.
+- One action at a time when unstable. Batch API edits (rename, pause) fine; creates are
+  paced per ad account (`00` §5); profile/security edits agitate the system.

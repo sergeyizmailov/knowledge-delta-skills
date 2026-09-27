@@ -23,8 +23,8 @@ Key (legacy): Settings → API section → copy `api_key=XXXX`.
 - `&val_page=all`, `&fid=N` (saved filter), order_name/order_type.
 - Fields: clicks, leads, cr, lp_ctr, epc, cpc, cost, rev, profit, ROI. Binom
   "leads" = conversions (all-events vs first-per-click NOT stated in docs —
-  verify per setup; contrast Keitaro, where leads = your chosen payout status,
-  01).
+  verify per setup; contrast Keitaro, where `leads` = conversions still in
+  status lead, regs = leads + sales, 01).
 
 ## Conversions report (per-conversion rows — enables nowcasting)
 

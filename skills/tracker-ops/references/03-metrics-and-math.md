@@ -14,10 +14,13 @@ conversions is the classic apples-to-oranges CPL. Conversion-date basis
 - Spend truth: ad platform API per account/day. Field-observed gotcha: a plain
   `/me/adaccounts` pull can omit disabled accounts, silently dropping their
   spend from totals — verify what your edge+fields return, keep your own
-  spend log (or agency billing) for history with dead accounts.
+  spend log (or agency billing) for history with dead accounts. Meta account
+  `balance` = unbilled amount in cents, not prepaid funds; `account_status` 3 =
+  unsettled billing, not a ban (FIELD 2026-09-27).
 - Lead truth: tracker, the AGREED payout measure only (not "conversions" = all
   postback records; the excess over your leads is integration-specific, not a
-  fixed multiple — SKILL metric rule).
+  fixed multiple — SKILL metric rule). Keitaro reg payout = leads + sales, not
+  `leads`; money = `sale_revenue`, not `revenue` (01).
 - Cross-check: pixel leads ≈ tracker leads (±tolerance set from a reconciled
   baseline, account-specific — SKILL rule #3). Bigger gap = wrong metric or
   broken tracking → stop and reconcile before reporting.
@@ -32,7 +35,9 @@ Branch on DIRECTION — causes differ:
 - Meta > tracker: tracking loss before tracker (click-ID/subid dropped in
   redirect/prelander, senior-buyer-ops/03; postback not firing, tracker-ops 01
   replay; pixel double-counting/dedup); or wrong tracker metric picked
-  (deeper status than the pixel event).
+  (deeper status than the pixel event); or view-through — tracker never sees
+  view conversions (team default for casino Purchase 7d click / 1d view,
+  meta-grey-ops/21); compare against Meta's click-only column (FIELD 2026-09-27).
 - Tracker > Meta: pixel under-fires (WebView/in-app browser strips it,
   consent/ATT blocks it, CAPI not sending → prefer S2S truth, fix the pixel);
   attribution-window/timezone mismatch (Meta modeled vs tracker raw);
@@ -217,9 +222,13 @@ not this curl.
 ## Daily routine (automate)
 
 For YESTERDAY (account tz): pull Meta spend/impr/clicks per live account →
-push total spend to tracker cost (idempotent) → pull tracker payout count →
+push real spend per FB campaign per day (filter = the param carrying campaign
+name, 01; idempotent) → confirm readback + no spend lost on zero-click days →
+pull tracker payout count (reg = leads + sales; money = `sale_revenue`) →
 fill team report (raw columns, formulas compute) → read per-account CPL vs
-target → kill/watch/scale → log snapshot. Missed days: re-run per date
+target → kill/watch/scale → log snapshot. End of day: re-push the same days
+after late conversions (mandatory if the campaign cost model is CPA/CPS auto,
+01) (FIELD 2026-09-27). Missed days: re-run per date
 (`meta-grey-ops/scripts/insights.py --since/--until`, or your own script with
 a date arg).
 

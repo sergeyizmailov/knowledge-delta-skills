@@ -8,7 +8,7 @@ Reviewed 2026-08-28. Filled from live work (Aug 2026); benchmarks are one team's
 
 **Geo/targeting:** USA 20+, Advantage+ broad, auto placements; kill placements with suspiciously cheap CPM and zero leads.
 
-**Creative constraints:** news-photo style with baked-in headline text; no ad-level primary text/headline (moderation rule); display link = big news domain (real destination stays the tracker link); CTA Learn more; all enhancements off except Hide price; multi-advertiser off. Uniquify per account before upload. Leads/Submit Application starts at 06:00–08:00 account geo-time, never 00:00.
+**Creative constraints:** news-photo style with baked-in headline text; no ad-level primary text/headline (moderation rule); display link = big news domain (real destination stays the tracker link); CTA Learn more; all enhancements off except Hide price; multi-advertiser off. Uniquify per account before upload (byte-level only, below Meta's near-duplicate threshold — not real variance, `13`). Leads/Submit Application starts at 06:00–08:00 account geo-time, never 00:00.
 
 **Review traps / what kills the account:**
 - A "news-style" persona alone does NOT trigger Special Ad Category — trigger is CONTENT: advocating/debating a topic of public importance (economy, health, crypto regulation) can fall under Social Issues/Elections/Politics. Keep creative on the product/offer, not the debated issue.
@@ -33,4 +33,4 @@ Reviewed 2026-08-28. Filled from live work (Aug 2026); benchmarks are one team's
 | Click→sub conversion | ~5–6% of Meta link clicks |
 | Payout | % of spend on CPL sliding scale (e.g. $8→12%, $10→10%, $12→8%) |
 
-**Metrics discipline:** TG subscription = tracker "leads" (Keitaro). Tracker "conversions" counts the whole funnel's postbacks — this team observed ~3.5–4x lead count, but ratio is setup-specific, never use as a CPL denominator. Cross-check: Meta pixel Lead ≈ tracker leads. Day = ad account timezone day for both spend and leads. Bot-share spikes in tracker = cloaca filtering hard — watch for domain/account ban after.
+**Metrics discipline:** TG subscription = tracker "leads" (Keitaro). If a deeper postback flips the same click lead→sale, subs = leads + sales (`tracker-ops/01`). Tracker "conversions" counts the whole funnel's postbacks — this team observed ~3.5–4x lead count, but ratio is setup-specific, never use as a CPL denominator. Cross-check: Meta pixel Lead ≈ tracker leads. Day = ad account timezone day for both spend and leads. Bot-share spikes in tracker = cloaca filtering hard — watch for domain/account ban after.

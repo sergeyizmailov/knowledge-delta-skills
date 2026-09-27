@@ -1,0 +1,29 @@
+{
+  "schema": "metaops.workspace/v1",
+  "name": "<project-name>",
+  "api_version": "v26.0",
+  "blocked_accounts": [],
+  "profiles": {
+    "<profile>": {
+      "business_id": "<bm-id>",
+      "token_kind": "user",
+      "ad_account_id": "act_<id>",
+      "page_id": "<page-id>",
+      "instagram_user_id": "auto",
+      "dataset_id": "<pixel-dataset-id>",
+      "catalog_id": "<catalog-id-or-omit>",
+      "feed_id": "<product-feed-id-or-omit>",
+      "product_sets": {
+        "main": "<product-set-id-or-omit>"
+      },
+      "currency": "USD",
+      "timezone": "Europe/Istanbul"
+    }
+  },
+  "defaults": {
+    "profile": "<profile>",
+    "token_env": "META_TOKEN",
+    "allow_no_proxy": false,
+    "state_dir": ".metaops"
+  }
+}

@@ -14,9 +14,9 @@ Editing pane opens via row checkbox + Edit [uncertain: exact pane behavior/place
 
 Over-segmentation (too many ad sets splitting budget) starves learning phase.
 
-**Campaign**: Objective (ODAX, §3) · Buying type (Auction default; Reservation = predictable delivery, eligible accounts only) · Special Ad Categories (financial/employment/housing/social-political — targeting restrictions vary by category/country) · Advantage campaign budget (formerly CBO, campaign-level, auto-distributed) · A/B test toggle.
+**Campaign**: Objective (ODAX, §3) · Buying type (Auction default; Reservation = predictable delivery, eligible accounts only) · Special Ad Categories (financial/employment/housing/social-political — targeting restrictions vary by category/country) · Advantage campaign budget (formerly CBO — `03-campaign-objectives-structure.md` §3) · A/B test toggle.
 
-**Ad set**: Performance goal/conversion event (varies by objective) · Budget & schedule if CBO off — daily budgets average across a week, Meta may spend **~75% more** on high-opportunity days [uncertain, not guaranteed — Shopify] · Audience: Advantage+ (AI, inputs are "suggestions"), Custom, Lookalike (1–10% similarity), detailed targeting · Placements: Advantage+ (auto FB/IG/Messenger/Audience Network/Threads) or Manual · Attribution: **Ads Manager UI default is 7-day click/1-day view** [official UI, 2026-09-02]; **API-built ad sets use the launch-tooling default 1d click/1d engaged/1d view** (meta-grey-ops SKILL.md → Launch defaults) — UI and API defaults diverge, don't assume one from the other.
+**Ad set**: Performance goal/conversion event (varies by objective) · Budget & schedule if CBO off — daily budgets average across a week, Meta may spend **~75% more** on high-opportunity days [uncertain, not guaranteed — Shopify] · Audience: Advantage+ (AI, inputs are "suggestions"), Custom, Lookalike (1–10% similarity), detailed targeting · Placements: Advantage+ (auto FB/IG/Messenger/Audience Network/Threads) or Manual — **ad-set placement exclusions being removed since 08/2026** (in-product notice, no formal announcement; replacement = value rules + account-level controls → `04` §3 box; verify live, Help Center lags) · Attribution: Meta's help page lists windows, not a default; **UI default reported as 7-day click/1-day engage-through/1-day view** [practitioner, 2026-09-25]; **API-built ad sets use the launch-tooling default 1d click/1d engaged/1d view** (meta-grey-ops SKILL.md → Launch defaults) — UI and API defaults diverge, don't assume one from the other.
 
 **Ad**: Identity (Page+IG) · Format (single image/video, carousel, collection, flexible) · Creative (media, primary text, headline(s), description, CTA, destination+UTM; multiple text/headline options get rotated by Meta) · Tracking (pixel event/URL params).
 
@@ -85,7 +85,7 @@ Unpublished work = draft; bulk uploads/imports also land as paused drafts [Ads U
 
 Billing: All tools → Billing → Payment settings (also `business.facebook.com/billing_hub`).
 
-**Account spending limit**: lifetime cap on total ad-account spend — not monthly, not per campaign [Meta Help Center via Agrowth 2026-01]. At limit: ads pause but stay listed **Active** (editable/resumable). Not available for manual-payment (prepaid) accounts. Distinct from campaign/ad-set budgets, billing thresholds (auto-charge points), and Meta's risk-based new-account caps (lift with billing history, typically months). Gotcha: exhausted $0-limit accounts look "banned" — check here before assuming restriction.
+**Account spending limit** → `01-business-portfolio-setup.md` §7 (Payments and spending limits).
 
 **Account quality**: `business.facebook.com/accountquality` (or Business Support Home) — shows restrictions/rejected ads/reasons/Request review per asset. Check here first if ads won't run with no visible ban. Common triggers [practitioner consensus]: repeated policy-violating rejections, payment/risk flags (method-country mismatch, suspicious activity), sudden activity spikes on new accounts, ads from restricted Pages.
 

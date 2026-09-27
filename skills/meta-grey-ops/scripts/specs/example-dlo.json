@@ -4,7 +4,7 @@
   "page_id": "REPLACE_ME",
   "instagram_user_id": "auto",
   "pixel_id": "REPLACE_ME",
-  "_note": "Locale ids are NUMERIC, from GET /search?type=adlocale&q=<lang>. Exactly one entry sets is_default, and at least two rules are required. `description` is REQUIRED — use a single space for blank. DLO ad_format is SINGLE_IMAGE or SINGLE_VIDEO only. Website destination only: no Instant Experience, no Messaging Apps. Meta documents DLO against LEGACY objective names (LINK_CLICKS/CONVERSIONS/...); whether ODAX OUTCOME_* is accepted is UNVERIFIED — a dry run will NOT catch it — validate_only cannot validate an ad without a real parent ad set, so a rejection lands at POST /ads during the real create. Prove this objective on one throwaway ad before scheduling a launch on it.",
+  "_note": "Locale ids are NUMERIC, from GET /search?type=adlocale&q=<lang>. Exactly one entry sets is_default, and at least two rules are required. `description` is REQUIRED — use a single space for blank. DLO ad_format is SINGLE_IMAGE or SINGLE_VIDEO only. Website destination only: no Instant Experience, no Messaging Apps. Each locale slot can carry its own `video_id`/`image_hash`, overriding the creative-level one, which is only the fallback for slots that omit it (`build_dlo_feed`) — set the creative-level value to the WHITE asset, so a lost or omitted per-slot override degrades to white, never to the money creative. Meta documents DLO against LEGACY objective names (LINK_CLICKS/CONVERSIONS/...); ODAX verified: OUTCOME_SALES + OFFSITE_CONVERSIONS + PURCHASE (2026-09-21 two rules; 2026-09-25 four rules) and OUTCOME_LEADS + OFFSITE_CONVERSIONS + COMPLETE_REGISTRATION (2026-09-23), see `04` — other OUTCOME_*/optimization_goal combinations remain UNVERIFIED, and a dry run will NOT catch a rejection there: validate_only cannot validate an ad without a real parent ad set, so it lands at POST /ads during the real create. Prove any other objective on one throwaway ad before scheduling a launch on it.",
   "campaign": {
     "name": "DLO|reg|2026-09-02",
     "objective": "OUTCOME_LEADS",
@@ -40,7 +40,7 @@
             "kind": "dlo",
             "ad_format": "SINGLE_VIDEO",
             "cta": "PLAY_GAME",
-            "video_id": "REPLACE_ME_FROM_media.json",
+            "video_id": "REPLACE_ME_WHITE_VIDEO_ID_FROM_media.json",
             "locales": [
               {
                 "label": "default",
@@ -58,6 +58,7 @@
                 "ids": [
                   59
                 ],
+                "video_id": "REPLACE_ME_MONEY_VIDEO_ID_FROM_media.json",
                 "body": "Hedef dildeki metin.",
                 "title": "Başlık",
                 "description": " ",

@@ -1,32 +1,32 @@
 # 00 — Launch runbook (start here for any API launch)
 
-Ordered path "have a token" → "spending". Every other file is an exception handler for one
-step below — don't read ahead; if a step passes, move on.
+Ordered path "have a token" → "spending". Other files are exception handlers for one step — if a
+step passes, move on. Reviewed 2026-09-02; ACTIVE-default 2026-09-25.
 
-Reviewed 2026-09-02. `metaops` is the only agent-facing Graph write interface. The scripts in
-`../scripts/` are implementations/debugging surfaces; direct write calls are rejected.
-
-For agent-driven launches, use the installed `metaops` CLI (`16`). When `workspace.json`
-exists, start with:
+`metaops` (`16`) is the only agent-facing Graph write interface; `../scripts/` are internal and
+reject direct writes. **Never hand-assemble a Graph payload** — agent writes the JSON spec,
+`launch.py` writes API calls. Defaults: `SKILL.md` § Launch defaults. With `workspace.json`:
 
 ```bash
 metaops --workspace . --profile <name> --json workspace validate
 metaops --workspace . --profile <name> --json assets verify --scope core
-# Use --scope all when the spec contains catalog_collection or catalog_single.
+# Use --scope all when the spec contains any catalog_* creative.
 metaops --workspace . --profile <name> --json doctor
 ```
 
-It resolves non-secret routing, blocks forbidden accounts and broken asset relationships,
-binds inputs to a saved plan, serializes each state, and keeps activation separate.
-
 ```
-0 gate  →  1 access  →  2 media  →  3 spec  →  4 dry run  →  5 create PAUSED (one or bulk)
-        →  6 verify  →  7 review layer  →  8 activate
-        →  9 first hour  →  9.5 daily sync  →  10 kill rules
+0 gate  →  1 access  →  2 media  →  3 spec  →  4 dry run  →  7 review layer + 7.5 QA
+        →  5 create ACTIVE (one or bulk)  →  6 verify  →  8 activate (create_status: PAUSED runs only)
+        →  9 first hour  →  9.5 daily sync  →  9.7 post-approval swap  →  10 kill rules
 ```
 
-**Never hand-assemble a Graph payload.** Agent writes the JSON spec; `launch.py` writes API
-calls. Defaults every object gets: `SKILL.md` § Launch defaults.
+**ACTIVE by default (canonical rule).** `apply`/`bulk-apply` create every object ACTIVE, print
+budget in major units + currency, and refuse without literal `--confirm SPEND`. Campaign is built
+PAUSED internally and flipped ACTIVE only after the whole tree exists, so a half-built tree never
+spends. ACTIVE creates refuse a past/offsetless `start_time` (re-date, re-plan). So steps 7 and
+7.5 run BEFORE step 5, and step 6 is a post-hoc check on a spending tree. Top-level
+`"create_status": "PAUSED"` restores the old order (create paused → 6/7 → step 8 activate) — use
+it whenever a review window before spend is needed (e.g. `9.7` catalog swap).
 
 ## Vertical parameters
 
@@ -40,15 +40,14 @@ calls. Defaults every object gets: `SKILL.md` § Launch defaults.
 
 ## 0 — Path exists?
 
-`10` Q1 (permission required before spend) / Q2 (no path in any geo). Clear gate in `09`
-**before any ad object exists**. Approvals bind to a **specific portfolio + ad account** — a
-replacement account needs a new approval.
+Open `.notes/plan.md` from the `19` template before the first write. `10` Q1 (permission before
+spend) / Q2 (no path in any geo); clear the gate in `09` **before any ad object exists**.
+Approvals bind to a **specific portfolio + ad account** — a replacement account needs a new one.
 
 ## 1 — Access and write probe
 
 Operator hands you, verbatim into gitignored notes: token, ad account id(s), Page id,
-pixel/dataset id, tracker campaign URL, proxy (if user token). Token type decides env (`02`
-owns detail):
+pixel/dataset id, tracker campaign URL, proxy (if user token). Token types → `02`.
 
 ```bash
 export META_TOKEN='...'                               # never on the command line
@@ -58,17 +57,14 @@ export META_PROXY='socks5h://user:pass@host:port'      # when this BM uses a fix
 export META_ALLOW_NO_PROXY=1
 export META_APP_SECRET='...'                          # optional; adds appsecret_proof
 metaops --workspace . --json doctor --whoami
-metaops --workspace . --profile <name> --json doctor --create-pbia
+metaops --workspace . --profile <name> --json doctor    # PBIA absent = WARN; create it in the UI (18)
 ```
 
-Exit 0 or don't launch. Gates, each separate: token identity · granted scopes
-(`ads_management`+`ads_read` required, rest of golden set warned) · account in
-`/me/adaccounts` (assigned to token, not merely readable) · account status + funding · Page
-token + PBIA · **pixel attached to THIS ad account** (shared to BM ≠ on account, 1815045) ·
-CAPI write · `validate_only` write probe. A successful `GET` proves none of these.
-
-Bulk planning validates every selected workspace profile before any PAUSED build.
-
+Exit 0 or don't launch. Gates: token identity · granted scopes (`ads_management`+`ads_read`
+required, rest warned) · account in `/me/adaccounts` (assigned, not merely readable) · status +
+funding · Page token + PBIA/IG (non-blocking since 2026-09-22, `18`) · **pixel attached to THIS
+ad account** (shared to BM ≠ on account, 1815045) · CAPI write · `validate_only` write. A `GET`
+proves none of these. Bulk planning validates every selected profile before any build.
 Token died / access denied → `02`. Asset not visible → `03`.
 
 ## 2 — Media
@@ -78,14 +74,14 @@ metaops --workspace . --profile <name> --json media \
   --video creatives/*.mp4 --image creatives/*.jpg
 ```
 
-Writes `media.json` (`image_hash`, `video_id`, thumbnail `image_hash`). Hashes are
-**account-scoped** — upload per account; bulk puts them in the account row's `media` block.
-Video async, script polls `video_status=ready`. Mechanics → `04` → Media.
+Writes `.metaops/media/<profile>.json` (`image_hash`, `video_id`, thumbnail hash), **overwritten
+every run** — second set (e.g. white): `--manifest .metaops/media/<profile>-white.json`. Hashes
+are **account-scoped**: upload per account; bulk reads the row's `media` block. Mechanics → `04`.
 
 ## 3 — Write the spec
 
-Copy nearest example from `scripts/specs/`, fill it. Put `"currency": "USD"` (account's) in
-spec — stops a cents-template landing on a TWD/JPY account at 100x.
+Copy nearest `scripts/specs/` example. Put account `"currency": "USD"` in spec (guards a cents
+template hitting a TWD/JPY account at 100x).
 
 | `creative.kind` | Shape | Example |
 |---|---|---|
@@ -94,36 +90,40 @@ spec — stops a cents-template landing on a TWD/JPY account at 100x.
 | `link_carousel` | 2–10 `cards`, each `image_hash` XOR `video_id`; cards inherit `link` | `example-abo-1-3-1.json` |
 | `dlo` | language slots via `asset_feed_spec`; SINGLE_IMAGE/SINGLE_VIDEO only, locale ids NUMERIC, ≥2 rules, one `is_default`, `description`=" " for blank | `example-dlo.json` |
 | `catalog_collection` | storefront hero + product set, **≥4 items** (2490457) | `example-catalog-collection-tr.json` |
-| `catalog_single` | one-product set → one deep-linked card, no minimum | `example-catalog-single.json` |
+| `catalog_single` | one-product set → one deep-linked card (`force_single_link`), no minimum | `example-catalog-single.json` |
+| `catalog_carousel` | multi-product carousel from the set (no `force_single_link`; Meta picks the card count), no documented minimum; `multi_share_end_card` default false | adapt `example-catalog-single.json` |
 
-Catalog kinds: fastest source is one Google Sheet edited via service account and pulled by Commerce
-Manager as a scheduled feed — `17` (`sheetfeed`). Swap links/images in the sheet, not via batch API.
+All `catalog_*`: `message` default `-----` (a wordy one refused unless `allow_message`), headline /
+description default `{{product.name}}` / `{{product.description}}` (any `{{product.*}}` tag accepted,
+static text refused unless `allow_static_text`), `swap_to` = target SKU(s) for the post-approval swap,
+`product_video: true` keeps `media_type_automation` ON so the items' own videos serve (implied by
+`format_option` `single_video`/`collection_video`), `format_option` checked against the v26 enum
+(`carousel_images_multi_items` default, `carousel_images_single_item`, `carousel_slideshows`,
+`collection_video`, `single_image`, `carousel_ar_effects`; `single_video` guide-only, warned).
 
-Structure is a spec choice, not a script limit:
-- **CBO** — `campaign.daily_budget_minor`, ad sets budget-less.
-- **ABO** — no campaign budget, every ad set carries `daily_budget_minor` (+ `bid_strategy`,
-  `bid_amount_minor` for COST_CAP/BID_CAP). 1-3-1 shape: `example-abo-1-3-1.json`. Mixed or
-  absent → spec rejected.
-- **EU/EEA** — `dsa_beneficiary` + `dsa_payor` on ad set (`example-eu-dsa.json`).
+Catalog source: Google Sheet pulled by Commerce Manager as scheduled feed (`17`, `sheetfeed`);
+swap links/images in the sheet, not via batch API.
 
-Costliest decisions:
-- **Objective.** `OUTCOME_LEADS` for lead/registration funnels. `OUTCOME_SALES` blocks
-  Lead/Submit Application events (2446814). Restricted verticals declare real
-  `special_ad_categories` — false/empty is a violation, not a bypass.
-- **Optimization event.** Aligned with or upstream of payout event; a deep event the account
-  can't feed keeps the ad set learning-limited. `OFFSITE_CONVERSIONS` +
-  `promoted_object{pixel_id, custom_event_type}` for site events; `LEAD_GENERATION` is the
-  lead-FORMS goal, not a website goal (`04`).
-- **`start_time`.** Conversions: 06:00–08:00 geo-time or 1–2h before evening window, **never
-  00:00**. Reach/traffic: next 00:00 (`04` → Scheduling).
-
-Attribution defaults: `SKILL.md` → Launch defaults. `"account_default"` sends nothing.
-**Immutable after create** (1504040) — wrong window = new ad set. Catalog creative wanting video
-cards must opt `media_type_automation` back in via `creative.opt_out_features`.
-
-Two adapter gaps: DLO objectives documented against legacy names only — `OUTCOME_*`
-acceptance unverified, a dry run can't catch it (ad create can). Test one DLO ad before a
-batch.
+- **CBO**: `campaign.daily_budget_minor`, ad sets budget-less. **ABO**: every ad set carries
+  `daily_budget_minor` (+ `bid_strategy`, `bid_amount_minor` for COST_CAP/BID_CAP), 1-3-1 =
+  `example-abo-1-3-1.json`. Mixed/absent → rejected. **EU/EEA**: `dsa_beneficiary` +
+  `dsa_payor` on ad set (`example-eu-dsa.json`).
+- **Objective**: `OUTCOME_LEADS` for lead/reg funnels; `OUTCOME_SALES` blocks Lead/Submit
+  Application events (2446814). Restricted verticals declare real `special_ad_categories` —
+  empty is a violation, not a bypass.
+- **Optimization event**: aligned with or upstream of payout (a deep event the account can't
+  feed stays learning-limited). Site events: `OFFSITE_CONVERSIONS` + `promoted_object{pixel_id,
+  custom_event_type}`; `LEAD_GENERATION` is lead-FORMS only (`04`).
+- **`start_time`**: conversions 06:00–08:00 geo-time or 1–2h before evening window, **never
+  00:00**; reach/traffic next 00:00 (`04` → Scheduling).
+- **Attribution**: `"account_default"` sends nothing; silent spec = code `DEFAULT_ATTRIBUTION`
+  1/1/1; `"account_default"` = API default 7d click only, no view (FIELD 2026-09-27); casino Purchase = 7d click / 1d view, set explicitly (`21`, `playbooks/casino.md`).
+  **Immutable after create** (1504040) — wrong window = new ad set.
+- Catalog creative with video cards: opt `media_type_automation` back in via
+  `creative.opt_out_features`.
+- **DLO + ODAX** field-confirmed only for `OUTCOME_SALES`+`OFFSITE_CONVERSIONS`+`PURCHASE` and
+  `OUTCOME_LEADS`+`OFFSITE_CONVERSIONS`+`COMPLETE_REGISTRATION` (`04`); others unverified and
+  invisible to dry run. Test one live DLO ad before a batch.
 
 ## 4 — Dry run
 
@@ -133,39 +133,36 @@ metaops --workspace . --json bulk-plan \
   --template specs/mine.json --accounts accounts.json --run <wave>
 ```
 
-`bulk-plan` deliberately has no `--profile`: each row in `accounts.json` selects its bound
-workspace profile. An absent or mismatched binding fails; do not add a catch-all profile flag.
+`bulk-plan` has no `--profile` by design: each `accounts.json` row selects its bound profile;
+absent/mismatched binding fails. `validate_only` creates nothing; on failure read
+`error_data.blame_field_specs`. Campaign+creative validated by Meta now; ad sets/ads locally now,
+by Meta right before each real create (`synchronous_ad_review` runs there). Real run refused
+without a clean whole-batch dry-run marker. Plan hashes every input — edited input = new plan.
 
-`execution_options: ["validate_only"]` — Meta validates, nothing created. On failure read
-`error_data.blame_field_specs` (names the field path at fault). Campaign+creative payloads
-validated by Meta now; ad sets/ads reference parents that don't exist yet, so checked locally
-now and by Meta immediately before each real create in step 5 (`synchronous_ad_review` also
-runs there). `bulk.py` refuses a real run until whole batch has a clean dry-run marker
-The saved plan hashes every input; editing a bound input requires a new plan.
-
-## 5 — Create, PAUSED
+## 5 — Create, ACTIVE by default
 
 ```bash
-metaops --workspace . --profile <name> --json apply --plan .metaops/plans/<plan>.json
+metaops --workspace . --profile <name> --json apply --plan .metaops/plans/<plan>.json --confirm SPEND
 metaops --workspace . --json bulk-apply \
-  --plan .metaops/plans/<bulk-plan>.json --verify [--dlo-tested]
+  --plan .metaops/plans/<bulk-plan>.json --confirm SPEND --verify [--dlo-tested]
 ```
 
-DLO/catalog template on >1 account: use `metaops apply` to build ONE account PAUSED, verify it,
-then pass `--dlo-tested` to `bulk-apply` — a dry run cannot prove the
-objective/creative combination is accepted (`04` → DLO).
-
-Every object created `PAUSED`. Workspace state `.metaops/<run_id>.json` records each create
-in-flight **before** the POST, id on success; a create is never retried on dropped connection
-(may have applied) — killed run stops next time, asks to reconcile instead of duplicating. A
-Graph *rejection* clears the marker and is retryable. No `--rollback`: paused objects cost
-nothing; deleting to tidy up is how you lose the one that succeeded.
-
-Bulk: substitutes account/page/pixel/IG per row, expands `{tag}` in every name (campaign name
-= account code is the tracker mapping contract, `03`), deep-merges `overrides`, applies
-per-account `media`, writes resolved specs below `.metaops/bulk/<run>/`, runs each
-account with its own state. One account failing doesn't stop the rest; summary names what to
-reconcile. Same template + same account again → resumes, never duplicates.
+- DLO/catalog template on >1 account: `apply` ONE account, verify, then `bulk-apply
+  --dlo-tested` (`04` → DLO).
+- **Pacing (FIELD 2026-09-27, after an Account Integrity "automation" disable on the most
+  API-loaded account, `06`):** ≤1 new campaign create per ad account per ~3h; exactly one
+  read-back after create, no polling loops; code 17/4/32/613 → stop, ≥30 min cooldown for that
+  account, never sleep-and-retry (Limited tier ≈300 calls/h/account, `04`). Weak/new account:
+  open below target budget, consider the first launch in Ads Manager UI.
+- State `.metaops/<run_id>.json` marks each create in-flight **before** the POST. Dropped
+  connection → never retried (may have applied); next run asks to reconcile. Graph *rejection*
+  clears the marker, retryable. Resume = the same `apply`; if the spec `start_time` has passed
+  meanwhile, add `--refresh-start <future ISO>` (re-dates only missing ad sets; no new plan). No
+  `--rollback`: pause (`edit status --confirm PAUSE`); `--status DELETED --confirm DELETE` removes any object, spend included (insights stay in account reports).
+- Bulk: substitutes account/page/pixel/IG per row, expands `{tag}` in names (campaign name =
+  account code is the tracker contract, `03`), deep-merges `overrides`, per-account `media`,
+  resolved specs in `.metaops/bulk/<run>/`, own state per account. One failure doesn't stop the
+  rest. Re-run resumes, never duplicates.
 
 ## 6 — Verify before you trust it
 
@@ -173,29 +170,47 @@ reconcile. Same template + same account again → resumes, never duplicates.
 metaops --workspace . --profile <name> --json verify --plan .metaops/plans/<plan>.json
 ```
 
-`verify.py` fails (no receipt) on **incomplete** state: any `in_flight` key (create whose
-outcome is unknown — live 2026-09-02 a creative POST got a bare 503; object didn't exist, but
-only Ads Manager can tell you that) or any spec ad set/ad missing from `objects`. Reconcile,
-then re-run `metaops apply --plan …` — it resumes from state and creates only what's missing.
+Fails (no receipt) on any `in_flight` key (outcome unknown — e.g. bare 503 on creative POST;
+only Ads Manager can tell) or any spec ad set/ad missing from `objects`. Reconcile, re-run
+`apply --plan … --confirm SPEND` — creates only what's missing.
 
-Reads every object back, diffs: budget (campaign under CBO, ad set under ABO) in minor units,
-bid strategy, optimization goal, promoted object, targeting, **attribution_spec**, **DSA
-fields**, destination per creative kind, `template_url_spec`, **`contextual_multi_ads` =
-OPT_OUT**, **no Advantage+ feature left OPT_IN**, every `effective_status`. A successful
-mutation isn't proof the object holds what you sent — Graph ignores unknown keys inside JSON
-parameters and fills enum defaults silently.
+Diffs read-back: ad set/ad `status`, DLO rules/locales/text, budget in minor units (campaign
+under CBO, ad set under ABO), bid strategy, optimization goal, promoted object, targeting,
+**attribution_spec**, **DSA fields**, destination per kind, **display URL**
+(`object_story_spec.link_data.caption`; MCP `display_link`, `15`) matching Website URL domain
+(`07`), `template_url_spec`, **`contextual_multi_ads` = OPT_OUT**, **no Advantage+ feature
+OPT_IN**, every `effective_status`. Graph silently ignores unknown JSON keys and fills enum
+defaults. MCP-created objects (`02` §6) never passed `verify` — diff them here too.
 
-Where API can't prove it, UI must, **while PAUSED**: Multi-advertiser checkbox on
-FORMAT_AUTOMATION collection creatives (field not readable there), placement previews (4:5
-feeds, 9:16 Stories/Reels).
+Run immediately after ACTIVE create; on mismatch pause the tree first (`edit status --ids …
+--status PAUSED --confirm PAUSE`), diagnose second (`00` §9).
+
+UI must prove, **before it spends**: Multi-advertiser checkbox on FORMAT_AUTOMATION collection
+creatives (not readable via API), placement previews (4:5 feeds, 9:16 Stories/Reels).
 
 ## 7 — Review layer (only if funnel needs one)
 
-`07` — filter stack, white-page requirements, LIVE/DEAD/SPLIT status. Cloak stays **off**
-until ad is serving. Catalog product-set repair: `04` → Collection/catalog quirks, executed
-through `metaops assets set-products`. PWA builders → `11`.
+`07` — filter stack, white-page requirements, LIVE/DEAD/SPLIT. Must be live BEFORE `apply`
+(ACTIVE default). Cloak stays **off** until the ad is serving. Product-set repair: `04` →
+Collection/catalog quirks, via `metaops assets set-products`. PWA builders → `11`.
 
-## 8 — Activate
+## 7.5 — Final QA gate (before spend)
+
+All before `apply --confirm SPEND` (under the PAUSED override: before `activate`):
+
+- Preview every ad (crop/enhance, §6). Allowed after create: ad doesn't deliver until review
+  approves (`effective_status`, minutes per `19`) — pause in that window if wrong.
+- One real click through redirect → Keitaro → event fire (`senior-buyer-ops/03`).
+- Naming matches tracking plan — wrong name breaks tracker split silently
+  (`senior-buyer-ops/SKILL.md` contract #6, `tracker-ops/03`).
+- Domain/SSL, macros, display URL (`caption`) re-verified — drift won't show in `verify`
+  (`senior-buyer-ops/03`; `07`).
+- Final IDs, URLs, subs, settings written to `.notes/`.
+
+## 8 — Activate (create_status: PAUSED runs only)
+
+Re-activating anything paused later is `edit status --ids … --status ACTIVE --confirm SPEND`,
+not `activate`.
 
 ```bash
 metaops --workspace . --profile <name> --json activate \
@@ -209,24 +224,25 @@ metaops --workspace . --profile <name> --json bulk-activate \
   --refresh-start 2026-09-03T07:00:00+03:00
 ```
 
-Spend-producing, separate command behind explicit flags. There is no activate-all command.
-Refresh `start_time` first — a past
-`start_time` doesn't error, it starts immediately in dead hours. Ads/ad sets first, campaign
-last; stops on first failure. Before `--confirm SPEND`, confirm with operator: budget in
-**major units and currency**, schedule, destination, creative set, `metaops verify` exit 0
-on this exact state file (writes `<state>.verified.json` with state hash + spec hash;
-the internal activator refuses if state changed since, receipt made without `--spec`, or against a
-different spec), UI multi-advertiser check done.
+No activate-all. A past `start_time` doesn't error — it starts immediately in dead hours, so
+refresh it. Ads/ad sets first, campaign last; stops on first failure. Confirm with operator:
+budget in **major units + currency**, schedule, destination, creatives, UI multi-advertiser
+check, `verify` exit 0 on this exact state (`<state>.verified.json` holds state + spec hash;
+refused if state changed, receipt made without `--spec`, or different spec).
 
 ## 9 — First hour
 
-- Insights on fresh campaigns empty 15–40 min. Not a delivery failure.
+- Insights empty 15–40 min on fresh campaigns — not a delivery failure.
 - Check `effective_status`, spend, destination, tracker receipt, billing.
-- No spend, no error: future `start_time`, review pending, billing hold, spend cap. Wait,
-  verify before touching anything (`05`).
-- Rejected ad cannot be enabled (2490468) — build a new one.
-- **Any budget/billing anomaly: pause first, diagnose second.** Verified 2026 incident: agent
-  debated currency units while a 100x budget kept spending.
+- No spend, no error: future `start_time`, review pending, billing hold, spend cap — verify
+  before touching (`05`).
+- Rejected ad cannot be enabled (2490468) — switch it off; a new ad needs a different
+  creative/angle/PWA. Never re-upload the rejected one into the same account (reads as
+  circumvention, FIELD 2026-09-27).
+- `account_status` 3 / "Payment needed" = billing, not a ban; clears once the card charges.
+  `balance` = unbilled amount in cents, not prepaid money (FIELD 2026-09-27).
+- **Budget/billing anomaly: pause first, diagnose second** (2026: a 100x budget kept spending
+  while units were debated).
 
 ## 9.1 — Operate
 
@@ -240,9 +256,7 @@ metaops … insights pull --level ad --date-preset yesterday --csv day.csv · in
 metaops … insights fatigue --event offsite_conversion.fb_pixel_lead   # weekly per-ad creative-fatigue sweep (meta-ads/08 §10), notify only
 ```
 
-All operate mutations are workspace-bound `metaops` commands (`16`); do not bypass the
-transport guard. Still UI-only: appeals, billing, BM/Page creation. Ladder math/traps →
-`senior-buyer-ops/04`.
+UI-only: appeals (appeal-or-replace is the TL/agency's call, `05`), billing, BM/Page creation. Ladder math → `senior-buyer-ops/04`.
 
 ## 9.5 — Daily sync
 
@@ -251,16 +265,39 @@ metaops --workspace . --profile <name> --json insights pull \
   --level ad --date-preset yesterday --csv .metaops/day.csv
 ```
 
-Rows in ad account timezone, attribution window stated explicitly (1d/1d here; Meta's own
-default is 7d click). Push spend as cost into tracker (`tracker-ops/01` `update_costs`); no
-cost push = no CPL. Verify one day by hand, then trust it.
+Rows in account timezone, window explicit (1d/1d; Meta default 7d click) — pass the ad set's
+own window for 7d-click sets (`21`). Push spend as cost to tracker (`tracker-ops/01` Cost push:
+account currency as-is incl. EUR; a day with spend but no clicks stores nothing; CPA-auto cost
+model adds fake cost) — no push = no CPL. Hand-verify one day first.
+
+## 9.7 — Post-approval swap (catalog/creative funnels)
+
+Skipped silently: nothing errors, white set keeps delivering. **Swap each set the moment its ads
+are approved; never wait for first delivery** (operator 2026-09-26: every white impression is wasted
+spend). Put the target SKU in the spec (`creative.swap_to`); `plan` checks it,
+`apply` prints the map. Right after `apply`, start `metaops assets swap --map a1=SKU1,b1=SKU2 --watch
+--confirm SWAP` in the background: one verdict per set, a reject or review on another set never holds it, text gate
+(product macros + neutral primary text) and target-item gate included (`16`). Pick the path by how
+the white→target change is made:
+
+| strategy | swap with | gate |
+|---|---|---|
+| one white product per set (`catalog_single`, operator standard) | `assets swap --map a1=T01` | ads on that set |
+| several products per set (carousel / collection ≥ 4) | `assets swap --map a1=T01+T02+T03+T04` | same + COLLECTION min 4 |
+| same retailer ids, item content replaced (sheet feed) | `feed swap --confirm FEED` | ads on sets holding those ids + rule-based sets |
+| same, API catalog | `catalog products batch --method UPDATE --confirm BATCH` | same as feed swap |
+| back to white (review request, creative edit) | `assets swap --map a1=W01 --revert` | none (white is safe) |
+
+Ad set can't be repointed (`04`). A catalog shared by ads in ANOTHER account is invisible to the
+gate: swap only when those ads are out of review too.
+Read back `product_count`, the filter, live card, every ad's `effective_status`. Cloaker ON only
+here, filter matching ad-set device/OS + GEO (`senior-buyer-ops/03`; filter stack `07`).
 
 ## 10 — Kill rules, agreed in writing
 
-Spend-without-lead cap, CPL cap, account verdict threshold — with TL, before launch. Ladder/
-small-sample math → `senior-buyer-ops/04`. Use the workspace-bound `metaops rules` commands in
-§9.1. Judge accounts after $30–50 (`SKILL.md` non-negotiable #5), cohorts on click date
-(`tracker-ops/03`).
+Spend-without-lead cap, CPL cap, account verdict threshold — with TL, before launch, via
+`metaops rules` (§9.1). Judge accounts after $30–50 (`SKILL.md` §Non-negotiables), cohorts on
+click date (`tracker-ops/03`); small-sample math → `senior-buyer-ops/04`.
 
 ## When a step fails
 

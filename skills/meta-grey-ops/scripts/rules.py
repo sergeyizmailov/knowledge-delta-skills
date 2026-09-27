@@ -154,6 +154,36 @@ def require_ids_in_account(ids: list[str], account: str) -> None:
             )
 
 
+def existing_rule_names(account: str) -> set[str]:
+    """Names already in the account library. A retry after a transport break
+    (outcome_unknown: the POST may have applied before the connection dropped) must
+    not blind-post again — it reconciles by name first. Rule names embed the rung
+    (k/spend/count/mode), so a name hit is the same rule, not a coincidence."""
+    return {str(r.get("name") or "") for r in list_rules(account) if r.get("name")}
+
+
+def create_one_rule(account: str, name: str, payload: dict) -> str:
+    """POST one ladder rung with name-dedup. Returns the rule id (existing or new).
+
+    On outcome_unknown the call may have landed: re-list by name before giving up,
+    so a retry never arms a duplicate pause rule (duplicate pause = double money
+    action on the same kill condition)."""
+    if name in existing_rule_names(account):
+        print(f"  = {name} already exists — skipping (dedup by name, no duplicate)")
+        existing = [r for r in list_rules(account) if r.get("name") == name]
+        return str(existing[0].get("id")) if existing else "existing"
+    try:
+        resp = graph.post(f"{account}/adrules_library", payload, context=f"rule {name}")
+    except graph.GraphError as exc:
+        if exc.outcome_unknown and name in existing_rule_names(account):
+            print(f"  = {name} appeared after an unknown outcome — reconciled, no retry",
+                  file=sys.stderr)
+            existing = [r for r in list_rules(account) if r.get("name") == name]
+            return str(existing[0].get("id")) if existing else "reconciled"
+        raise
+    return str(resp["id"])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--account", help="act_<id>")
@@ -251,10 +281,11 @@ def main() -> int:
         sys.exit("--ids must contain at least one object id")
     if ids:
         require_ids_in_account(ids, account)
-    existing = len(list_rules(account))
-    if existing + len(rows) > 250:
-        sys.exit(f"{existing} rules exist; adding {len(rows)} exceeds the 250/account cap")
+    library = list_rules(account)
+    if len(library) + len(rows) > 250:
+        sys.exit(f"{len(library)} rules exist; adding {len(rows)} exceeds the 250/account cap")
     created = []
+    skipped: list[str] = []
     for r in rows:
         name = f"{args.prefix.replace('{k}', str(r['k']))}k{r['k']}|>{r['spend_minor']}|<{r['k'] + 1}|{args.mode}"
         payload = build_rule(name, args.level, r["k"], r["spend_minor"], args.event, args.mode,
@@ -262,9 +293,24 @@ def main() -> int:
         if args.dry_run:
             print(f"  would POST /adrules_library {json.dumps(payload)}")
             continue
-        resp = graph.post(f"{account}/adrules_library", payload, context=f"rule k={r['k']}")
-        created.append(resp["id"])
-        print(f"  + {resp['id']}  {name}")
+        # Dedup by name inside the loop (not just the pre-fetched library): a rung
+        # created earlier in THIS run, or landed during an outcome_unknown break,
+        # must not be posted twice.
+        known = {str(row.get("name") or "") for row in list_rules(account)} if created else \
+            {str(row.get("name") or "") for row in library}
+        if name in known:
+            print(f"  = {name} already exists — skipping (dedup by name, no duplicate)")
+            skipped.append(name)
+            continue
+        try:
+            rule_id = create_one_rule(account, name, payload)
+        except graph.GraphError as exc:
+            if exc.outcome_unknown:
+                print(f"  x {name}: outcome unknown — reconcile `rules list` before retrying "
+                      f"(refusing to blind-retry a pause rule)", file=sys.stderr)
+            raise
+        created.append(rule_id)
+        print(f"  + {rule_id}  {name}")
     if created:
         print(f"\n{len(created)} rule(s) armed as {args.mode.upper()}.")
         if args.mode == "notify":
@@ -273,7 +319,8 @@ def main() -> int:
         print("LIFETIME sticks on relaunch: a paused ad set keeps its lifetime counts. Duplicate the ad "
               "set (clone.py) or use --time-preset LAST_7D.")
     print(json.dumps({"schema": "rules.result/v1", "ok": True, "action": "create",
-                      "dry_run": args.dry_run, "mode": args.mode, "created": created},
+                      "dry_run": args.dry_run, "mode": args.mode, "created": created,
+                      "skipped_existing": skipped},
                      ensure_ascii=False))
     return 0
 

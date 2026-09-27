@@ -66,7 +66,7 @@ Not mandatory for basic advertising; required/recommended for WhatsApp Business 
 - Payment method varies by country: cards most common; PayPal/direct debit some markets; manual prepay some countries; monthly invoicing/credit lines only via application.
 - No universal rule flags every prepaid/virtual card as high-risk; diagnose failed transaction, amount due, verified/default card, method eligibility, and account restriction **separately** — zero balance + verified card alone doesn't restore an account.
 - Never transmit card data/verification codes via chat or API tooling — only Meta's trusted UI.
-- **Account spending limit**: hard lifetime cap. At cap, **all campaigns stop delivering but still show "active"** [practitioner: Jon Loomer] — classic false-restriction symptom. Reset continues spend under same cap.
+- **Account spending limit**: hard lifetime cap on total ad-account spend — not monthly, not per campaign [practitioner: Jon Loomer; Meta Help Center via Agrowth 2026-01]. At cap, **all campaigns stop delivering but still show "active"** (editable/resumable) — classic false-restriction symptom; check here before assuming restriction. Not available for manual-payment (prepaid) accounts. Distinct from campaign/ad-set budgets, billing thresholds (auto-charge points), and Meta's risk-based new-account caps (lift with billing history, typically months). Gotcha: exhausted $0-limit accounts look "banned". Reset continues spend under same cap.
 - **Daily spending limit**: Meta-imposed, dynamic, grows with history — not manually settable.
 - **Campaign spending limit**: optional per-campaign cap.
 - IG "ad spending limit" in the promotion flow = same account spending limit.

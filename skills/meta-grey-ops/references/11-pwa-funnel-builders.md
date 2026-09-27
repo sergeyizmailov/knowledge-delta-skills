@@ -28,6 +28,10 @@ Dead/no public docs 2026-08-30 (don't waste time): AFFPRO, app-pwa.com, ipwa.io,
 
 Named, contract unknown (evaluate via the 5 points above before spend): **SetPro** — affiliate-promoted, no macro/postback/event mapping published [2026-09-08].
 
+**PWA Partners** (pwa.partners, dash.pwa.partners; support `@PwaPartners_sup`) — app rental: PWAs are a team-shared library, each buyer's *link/domain* object holds `pwa_uuid`, cloak (GEO, Android-only, white page), offer URL and macros. **Verified live 2026-09-22..26:** REST API `https://api.pwa.partners/api` (login `POST /auth/login/{team_uuid}` → raw token in `authorization`, browser UA required, Cloudflare 1010 otherwise); offer URL macro `{USER_ID}` → Keitaro `external_id`; ad URL `?sub_id_1..6=…&pixel=<id>` (pixel routed per click; pixel+CAPI token registered once in the UI); Keitaro S2S `https://postback.pwa.partners/api/postback?user_id={external_id}&event=<lead|sale>&amount=…&team_uuid=…`. `PUT /domain/update` is an UPSERT — send the full `domain/get` object with `uuid` or it creates a blank domain. `statistics/report` trusts only `today`/`yesterday` intervals.
+
+**BlackPWA** — no such platform in the affiliate space, checked 2026-09-18; the name resolves only to an unrelated open-source toy PWA. Do not source for it.
+
 ## Failure modes (documented in the wild, 2026 sources)
 
 | Symptom | Cause |
@@ -49,8 +53,18 @@ Named, contract unknown (evaluate via the 5 points above before spend): **SetPro
 2. Test events: event_name/value/event_id correct; pixel+CAPI share event_id; EMQ ≥6.
 3. Postback delivery logs clean (no 404/timeout); weekly health audit after.
 4. Target-geo SIM, mid-range Android: PWA loads <2s on 3G; separate iOS/Safari install page.
-5. Events Manager diagnostics 2–3 days live → remove test_event_code; keep 5–10 domain pool with rotation plan (Meta flags domains system-wide — a URL seen in a banned ad underperforms even from new accounts).
-6. reg→FTD split diagnostic: installs high/regs low = onboarding problem; regs high/FTD low = payments or traffic quality.
+5. Remove test_event_code before live traffic (failure table: left live = real events go to the test panel), then watch Events Manager diagnostics 2–3 days; keep 5–10 domain pool with rotation plan (Meta flags domains system-wide — a URL seen in a banned ad underperforms even from new accounts).
+6. reg→FTD split diagnostic: installs high/regs low = onboarding problem; regs high/FTD low =
+   payments or traffic quality. **Before accepting either verdict, check the price paid per
+   install against the GEO band.** Installs high / regs low reads as onboarding, but a CPI far
+   BELOW the band produces exactly the same shape from low-intent traffic, and rebuilding
+   onboarding will not move it (`playbooks/casino.md` § Price-vs-quality).
+7. Count-match the event mapping against the builder's own panel before trusting any stage rate.
+   The FB event names in the table above are a vendor CONFIG, not a meaning — the same
+   `CompleteRegistration` string is wired to the install on many non-pwa.bot setups. Match one
+   day per stage; a matching install count does not verify the reg mapping.
+
+User-facing PWA/ad packaging (game-first vs offer logo vs local-brand spoof) is not a builder-contract issue → `playbooks/casino.md` § Creative packaging.
 
 ## Numbers (practitioner/self-reported bands, no independent audit)
 

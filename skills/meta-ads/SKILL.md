@@ -1,13 +1,13 @@
 ---
 name: meta-ads
-description: "Senior Meta (FB/IG) ads, clean-marketing layer: plan, structure, audit, diagnose, scale an ad account — ODAX objectives, CBO/ABO, Advantage+ audiences and creative, attribution windows, Pixel/CAPI/EMQ, learning phase, creative fatigue, policy rejections, unit economics, API error codes. Use for: 'why is CPA up', 'ad set stuck in learning', 'CBO vs ABO', 'which attribution setting', 'pixel vs CAPI events mismatch', 'Meta ad rejected Personal Attributes', 'Graph API error 1885501'. Executing an API launch and grey infra/survival = meta-grey-ops; tracker metrics = tracker-ops; portfolio decisions = senior-buyer-ops."
+description: "Diagnoses and scales Meta/Instagram ad accounts: 'why is CPA up', 'CBO vs ABO', 'pixel vs CAPI mismatch', 'ad rejected', 'what does Marketing API error X mean'. Covers ODAX, Advantage+, attribution, policy, unit economics, canonical API error catalog. Not API launch/grey infra (meta-grey-ops), cross-account kill/scale (senior-buyer-ops), tracker math (tracker-ops) or causal test validity (measurement-experimentation-ops)."
 ---
 
 # Meta Ads
 
 Operate as a senior Meta Ads practitioner. Treat UI, eligibility, policy, API
 behavior, prices, benchmarks as volatile — verify current primary sources when
-the answer depends on current behavior. Research reviewed **2026-07-28**. Baseline 2026-09-03 (Sonnet 5
+the answer depends on current behavior. Research reviewed per file (see each header); only sections marked verified 2026-09-2x were rechecked against primary sources. Baseline 2026-09-03 (Sonnet 5
 blind, 4 tasks): 3 [W] (attribution/targeting fields, enhancement opt-outs, error codes), 1 [A]; rerun with skills fixed 5/5 flagged items.
 
 ## Route references
@@ -35,6 +35,24 @@ Read only what the task needs:
 Always read 00 for current policy, eligibility, numerical claims, or external
 benchmarks. Read 13 before API/MCP automation, accepting tokens, billing work,
 restrictions, or activation.
+
+## Guardrails
+
+Tripwires that must fire before any reference is read:
+
+- Do not assume the retired location-presence selector exists; Special Ad Audiences are
+  discontinued (full retired-concepts table → `00` §4).
+- Pixel is the web data source; datasets group events (`08`). Interests/lookalikes and Advantage+
+  availability vary — verify the live flow (`05`).
+- `50 events/7 days`, budget-change percentages, frequency caps, and refresh cadences are
+  heuristics, not universal rules. Hard limits consolidated in `00` §4.2.
+- Card verification, balance, payment eligibility, and restriction are separate states, as are
+  portfolio membership, ownership, and creation quota. `Leave` does not equal deletion; "warmed"
+  assets guarantee neither approval nor payment trust (`01`, `13`).
+- Treat support replies as account-specific evidence, not platform contracts (`00` §2).
+- System User tokens are bearer secrets. Never expose them in chat, URLs, screenshots,
+  repositories, or logs.
+- Do not delete/rebuild assets or profiles to evade enforcement.
 
 ## Evidence rules
 
@@ -107,24 +125,6 @@ eligibility/billing -> delivery -> auction -> attention -> click quality
 - Restriction: capture exact affected asset/reason, correct it, then appeal.
 - API read-only failure: inspect scopes, System User asset tasks,
   app/business relationship, identity, and restriction state.
-
-## Guardrails
-
-Tripwires that must fire before any reference is read:
-
-- Do not assume the retired location-presence selector exists; Special Ad Audiences are
-  discontinued (full retired-concepts table → `00` §4).
-- Pixel is the web data source; datasets group events (`08`). Interests/lookalikes and Advantage+
-  availability vary — verify the live flow (`05`).
-- `50 events/7 days`, budget-change percentages, frequency caps, and refresh cadences are
-  heuristics, not universal rules. Hard limits consolidated in `00` §4.2.
-- Card verification, balance, payment eligibility, and restriction are separate states, as are
-  portfolio membership, ownership, and creation quota. `Leave` does not equal deletion; "warmed"
-  assets guarantee neither approval nor payment trust (`01`, `13`).
-- Treat support replies as account-specific evidence, not platform contracts (`00` §2).
-- System User tokens are bearer secrets. Never expose them in chat, URLs, screenshots,
-  repositories, or logs.
-- Do not delete/rebuild assets or profiles to evade enforcement.
 
 ## Output
 

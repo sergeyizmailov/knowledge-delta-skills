@@ -1,6 +1,6 @@
 ---
 name: knowledge-delta-skill-architect
-description: "Writes, audits, and compresses agent skills so they earn their tokens. Covers include-vs-cut, real expertise vs what the model already knows, sizing and progressive disclosure, description/trigger design, multi-file skills. For: write a skill for X, improve/shrink this skill, is this skill worth its tokens, my skill never triggers, port domain expertise into SKILL.md, split one into references."
+description: "Triggers: write a skill for X, improve/shrink this skill, is this skill worth its tokens, my skill never triggers, port domain expertise into SKILL.md, split one into references. Writes, audits, and compresses agent skills so they earn their tokens. Not for one-off skill scaffolding without a measured gap (skill-creator)."
 ---
 
 # Knowledge-Delta Skill Architect
@@ -8,6 +8,7 @@ description: "Writes, audits, and compresses agent skills so they earn their tok
 Reviewed 2026-09-09. Method unmeasured — no baseline was run for this skill itself (the
 `Baseline:` stamp §"Scope, then baseline" mandates is therefore absent by disclosure, not
 oversight). Runtime numbers in `02` §0 were verified 2026-08-28 / 09-08.
+Status: unmeasured
 
 `01` `02` `03` = the numbered files under `references/`; read triggers in the table at the end.
 Sources and their limits: `03`.
@@ -216,9 +217,9 @@ a hypothesis, not a finding.
 
 | Need | File |
 |---|---|
-| Keep/cut triage, contradictions, volatile vs stable, compression, anti-patterns | `references/01-triage.md` |
-| Frontmatter, progressive disclosure, description design, layout, **scaling past one file**, scripts, portability | `references/02-architecture.md` |
-| Claim → source map, scope limits, what is folklore | `references/03-sources.md` |
+| Keep/cut triage, contradictions, volatile vs stable, compression, anti-patterns | `references/01-triage.md` — read when deciding what survives triage |
+| Frontmatter, progressive disclosure, description design, layout, **scaling past one file**, scripts, portability | `references/02-architecture.md` — read when packaging the skill (frontmatter, files, scripts) |
+| Claim → source map, scope limits, what is folklore | `references/03-sources.md` — read when sourcing or re-verifying a specific claim |
 
 ## Non-negotiables
 

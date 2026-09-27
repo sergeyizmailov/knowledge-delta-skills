@@ -1,12 +1,13 @@
 ---
 name: measurement-experimentation-ops
-description: "Decide whether a media-buying result is real before scaling it: testing-mode choice (causal / screening / infrastructure), validity traps (SRM, peeking, contamination, lag, multiple testing), and the platforms' measurement tools — Meta (A/B Test, ad_study API, Conversion Lift, GeoLift, Robyn) and Google (Experiments, Conversion Lift, Meridian MMM, brand-search incrementality). Pairs with the media-buying set."
+description: "Gatekeeper for 'is this result real before scaling': SRM, peeking, contamination, lag and multiple-testing checks; picks causal, screening or infrastructure test mode plus Meta/Google lift tools. When no volume, dying accounts or no rep allow a lift study, prescribes the honest weaker method instead of a fake lift."
 ---
 
 # Measurement & Experimentation Ops
 
 The other skills act on measured differences; this decides whether a difference
 is real or noise before they do.
+Status: unmeasured — no baseline task has been run for this skill; treat sections as unvalidated until one is.
 
 ## Pick the testing mode by the decision at stake
 

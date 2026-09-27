@@ -20,6 +20,9 @@ import tempfile
 
 os.environ.setdefault("META_TOKEN", "TESTTOKEN/with+chars")
 os.environ.setdefault("META_PROXY", "socks5h://puser:ppass@1.2.3.4:1080")
+# Pacing state is global (~/.metaops) — never let a selftest read or write the real one.
+os.environ["METAOPS_PACE_DIR"] = tempfile.mkdtemp(prefix="metaops-selftest-pace-")
+os.environ.pop("METAOPS_ACCOUNT_CONTEXT", None)
 
 import graph
 import launch
@@ -132,11 +135,74 @@ def test_encoding() -> None:
     check("dict → compact json", graph._encode({"a": [1, 2]}) == '{"a":[1,2]}')
     check("str passes through", graph._encode("x") == "x")
 
-    txt = graph.redact("access_token=TESTTOKEN/with+chars enc=TESTTOKEN%2Fwith%2Bchars "
-                       "proxy=socks5h://puser:ppass@1.2.3.4")
-    check("raw token redacted", "TESTTOKEN/with+chars" not in txt, txt)
-    check("url-encoded token redacted", "TESTTOKEN%2F" not in txt, txt)
-    check("proxy creds redacted", "ppass" not in txt, txt)
+    old_cookies = os.environ.get("META_COOKIES")
+    os.environ["META_COOKIES"] = "c_user=1234567; xs=secretxsvalue"
+    try:
+        txt = graph.redact("access_token=TESTTOKEN/with+chars enc=TESTTOKEN%2Fwith%2Bchars "
+                           "proxy=socks5h://puser:ppass@1.2.3.4 "
+                           "cookie=c_user=1234567; xs=secretxsvalue partial=secretxsvalue")
+        check("raw token redacted", "TESTTOKEN/with+chars" not in txt, txt)
+        check("url-encoded token redacted", "TESTTOKEN%2F" not in txt, txt)
+        check("proxy creds redacted", "ppass" not in txt, txt)
+        check("cookies redacted", "secretxsvalue" not in txt and "1234567" not in txt, txt)
+    finally:
+        if old_cookies is not None:
+            os.environ["META_COOKIES"] = old_cookies
+        else:
+            os.environ.pop("META_COOKIES", None)
+
+
+def test_redact_vectors() -> None:
+    """Central redact must cover every secret kind, not only META_TOKEN."""
+    print("redact vectors")
+    # Page-token set (the real hole: Page tokens never lived in META_TOKEN).
+    page_token = "PAGE_SELFTEST_TOKEN_ABC123"
+    graph.register_secret(page_token)
+    old_token = os.environ.get("META_TOKEN")
+    os.environ["META_TOKEN"] = "TESTTOKEN/with+chars"
+    try:
+        txt = graph.redact(f"page call failed with {page_token} and TESTTOKEN/with+chars")
+        check("Page token masked", page_token not in txt and "<TOKEN>" in txt, txt)
+    finally:
+        if old_token is not None:
+            os.environ["META_TOKEN"] = old_token
+    old_secret = os.environ.get("META_APP_SECRET")
+    os.environ["META_APP_SECRET"] = "SELFTEST_APP_SECRET_XYZ"
+    try:
+        txt = graph.redact("leak SELFTEST_APP_SECRET_XYZ here")
+        check("META_APP_SECRET masked", "SELFTEST_APP_SECRET_XYZ" not in txt
+              and "<APP_SECRET>" in txt, txt)
+    finally:
+        if old_secret is not None:
+            os.environ["META_APP_SECRET"] = old_secret
+        else:
+            os.environ.pop("META_APP_SECRET", None)
+    old_tg = os.environ.get("TG_BOT_TOKEN")
+    os.environ["TG_BOT_TOKEN"] = "SELFTEST_TG_123:FAKE"
+    try:
+        txt = graph.redact("https://api.telegram.org/botSELFTEST_TG_123:FAKE/sendMessage boom")
+        check("TG_BOT_TOKEN masked", "SELFTEST_TG_123:FAKE" not in txt
+              and "<TG_TOKEN>" in txt, txt)
+    finally:
+        if old_tg is not None:
+            os.environ["TG_BOT_TOKEN"] = old_tg
+        else:
+            os.environ.pop("TG_BOT_TOKEN", None)
+
+
+def test_version_window() -> None:
+    """N/N-1 accepted (N-1 warns), outside hard-fails. Sunset table minimum."""
+    print("version window")
+    check("SUPPORTED_VERSIONS is N/N-1", tuple(graph.SUPPORTED_VERSIONS) == ("v26.0", "v25.0"),
+          str(graph.SUPPORTED_VERSIONS))
+    check("v24 sunset duplicated", graph.VERSION_SUNSET.get("v24.0") == "2026-10-06",
+          str(graph.VERSION_SUNSET))
+    check("current is current", graph.version_status(graph.API_VERSION) == "current")
+    check("v25 is previous", graph.version_status("v25.0") == "previous")
+    check("v24 is unsupported", graph.version_status("v24.0") == "unsupported")
+    check("N-1 warns", graph.version_warning("v25.0") is not None
+          and "2026-10-06" in graph.version_warning("v25.0"))
+    check("current does not warn", graph.version_warning(graph.API_VERSION) is None)
 
 
 # --- builders -------------------------------------------------------------------
@@ -177,6 +243,12 @@ def test_attribution() -> None:
           and all(e["window_days"] == 1 for e in dflt), str(dflt))
     check("account_default → nothing sent",
           launch.build_attribution({"attribution": "account_default"}) is None)
+    click7view1 = launch.build_attribution(
+        {"optimization_goal": "OFFSITE_CONVERSIONS", "attribution": {"click_days": 7, "view_days": 1}}
+    )
+    check("click_days=7/view_days=1 -> CLICK_THROUGH 7 + VIEW_THROUGH 1",
+          click7view1 == [{"event_type": "CLICK_THROUGH", "window_days": 7},
+                          {"event_type": "VIEW_THROUGH", "window_days": 1}], str(click7view1))
 
 
 def _spec_from(obj: dict) -> dict:
@@ -256,6 +328,34 @@ def test_spec_rules() -> None:
         check("EU geo without DSA rejected", True)
     eu["adsets"][0].update({"dsa_beneficiary": "X GmbH", "dsa_payor": "X GmbH"})
     check("EU geo with DSA accepted", _spec_from(eu)["budget_mode"] == "CBO")
+
+    cbo_cap = _base_spec()
+    cbo_cap["campaign"]["bid_strategy"] = "LOWEST_COST_WITH_BID_CAP"
+    try:
+        _spec_from(cbo_cap)
+        check("CBO bid cap without adset bid_amount_minor rejected", False, "accepted")
+    except SystemExit:
+        check("CBO bid cap without adset bid_amount_minor rejected", True)
+    # bid_amount_minor is the one field CBO ad sets are allowed to carry (still no
+    # daily_budget_minor/bid_strategy) — used to send the cap amount per ad set (1815857).
+    cbo_cap["adsets"][0]["bid_amount_minor"] = 250
+    loaded_cbo_cap = _spec_from(cbo_cap)
+    check("CBO bid cap with adset bid_amount_minor accepted",
+          loaded_cbo_cap["adsets"][0]["bid_amount_minor"] == 250)
+
+    cbo_no_cap = _base_spec()
+    cbo_no_cap["adsets"][0]["bid_amount_minor"] = 250
+    check("CBO without a cap strategy still accepts a stray bid_amount_minor (not required)",
+          _spec_from(cbo_no_cap)["adsets"][0]["bid_amount_minor"] == 250)
+
+    cbo_cap_budget = _base_spec()
+    cbo_cap_budget["campaign"]["bid_strategy"] = "COST_CAP"
+    cbo_cap_budget["adsets"][0]["daily_budget_minor"] = 500
+    try:
+        _spec_from(cbo_cap_budget)
+        check("CBO ad set still forbids daily_budget_minor even with a cap strategy", False, "accepted")
+    except SystemExit:
+        check("CBO ad set still forbids daily_budget_minor even with a cap strategy", True)
 
     # float budget stays rejected
     fl = _base_spec()
@@ -463,6 +563,15 @@ def test_equivalence() -> None:
     check("Graph-enriched dict → match", d.bad == 0, f"bad={d.bad}")
 
     d = verify.Diff()
+    d.check("loc", verify.normalize_location_types({"countries": ["TR"], "location_types": ["home", "recent"]}),
+            {"countries": ["TR"], "location_types": ["frequently_in", "home", "recent"]})
+    check("home+recent read back with frequently_in → match", d.bad == 0, f"bad={d.bad}")
+    d = verify.Diff()
+    d.check("loc", verify.normalize_location_types({"countries": ["TR"], "location_types": ["home"]}),
+            {"countries": ["TR"], "location_types": ["frequently_in", "home"]})
+    check("home alone not widened → mismatch", d.bad == 1, f"bad={d.bad}")
+
+    d = verify.Diff()
     d.check("order", ["a", "b"], ["b", "a"])
     check("list order ignored", d.bad == 0, f"bad={d.bad}")
 
@@ -618,17 +727,28 @@ def test_scripts_import() -> None:
     import importlib
     for name in (
         "monitor", "clone", "comments", "edit", "rules", "uniquify", "page", "bulk",
-        "asset_graph", "meta_workspace", "metaops",
+        "asset_graph", "meta_workspace", "metaops", "swapgate", "mutate_set",
     ):
         try:
             importlib.import_module(name)
             check(f"{name}.py imports", True)
         except Exception as e:  # noqa: BLE001
             check(f"{name}.py imports", False, repr(e))
+    # The installed `metaops` only ships modules listed in pyproject py-modules; a new module that is
+    # missing there imports fine here and dies with ModuleNotFoundError in the installed tool
+    # (field 2026-09-26, swapgate).
+    import pathlib
+    import re as _re
+    here = pathlib.Path(__file__).resolve().parent
+    listed = set(_re.findall(r'"(\w+)"', (here.parent / "pyproject.toml").read_text().split("py-modules", 1)[1].split("]", 1)[0]))
+    missing = sorted(p.stem for p in here.glob("*.py")
+                     if not p.stem.startswith("test_") and p.stem != "selftest" and p.stem not in listed)
+    check("every script module is packaged (pyproject py-modules)", not missing, f"missing: {missing}")
 
 
 def main() -> int:
-    for fn in (test_transport, test_bearer_header, test_gates, test_encoding, test_specs, test_attribution, test_spec_rules,
+    for fn in (test_transport, test_bearer_header, test_gates, test_encoding, test_redact_vectors,
+               test_version_window, test_specs, test_attribution, test_spec_rules,
                test_creative_flags, test_dlo, test_catalog_template_url, test_destination,
                test_probe_is_retryable, test_equivalence, test_bulk, test_rules_ladder,
                test_scripts_import):

@@ -78,6 +78,9 @@ in first pinned comment (sweeps technique; ~10× organic/viral reach claimed on 
 
 ## Spy / creative intel (current 2026)
 
+- **Tyver** — FB/IG, strong CIS/Asia grey (KG verified). Public API with a `tyv_` token, 1 view per
+  creative returned; `target_url` exposes macros/pixel, so it joins with team PWA/tracker stats by host.
+  The GAMBLING tag misses most catalog-camouflage ads — search by text/domain. CLI + traps → `07`.
 - AdSpy — deepest FB/IG DB (comment + affiliate-network filters); best for grey.
 - AdHeart — FB/IG, strong in CIS grey scene.
 - SpyTrend — Meta+TikTok. The differentiator is **advertiser/webmaster clustering**: ads

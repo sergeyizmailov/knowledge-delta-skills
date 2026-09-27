@@ -32,6 +32,8 @@ at once — the ban rate means no replacements; reserve keeps scaling uninterrup
   infra (IP/persona/device), a bad account batch from the agency, a creative/policy pattern
   tripping review, a burned domain, a billing/asset issue, or the whole bundle. Attribute the
   cause before reacting — hazard-rate forensics in meta-grey-ops/06 (reactions in 01/05).
+  Meta `account_status` 3 = unsettled billing, not a ban — settle billing, don't log it as a ban
+  or queue a replacement (FIELD 2026-09-27).
 
 ## Kill / watch / scale ladder
 

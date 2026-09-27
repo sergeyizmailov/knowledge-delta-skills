@@ -35,6 +35,7 @@ import re
 import sys
 import tempfile
 import time
+import uuid
 
 import graph
 
@@ -54,15 +55,18 @@ def upload_image(account: str, path: str) -> dict:
     if "." not in name:
         sys.exit(f"{path}: Meta requires a filename extension (e.g. .jpg), got {name!r}")
 
+    # Bytes, not a file handle: graph.call retries idempotent uploads, and a handle left at
+    # EOF by the first attempt would send an empty body on the retry.
     with open(path, "rb") as fh:
-        resp = graph.call(
-            "POST", f"{account}/adimages",
-            files={name: (name, fh)},
-            context=f"adimages {name}",
-            # Safe to repeat: the hash is derived from the file's bytes, so a re-upload
-            # of the same file returns the same hash instead of a second asset.
-            idempotent=True,
-        )
+        content = fh.read()
+    resp = graph.call(
+        "POST", f"{account}/adimages",
+        files={name: (name, content)},
+        context=f"adimages {name}",
+        # Safe to repeat: the hash is derived from the file's bytes, so a re-upload
+        # of the same file returns the same hash instead of a second asset.
+        idempotent=True,
+    )
     entry = next(iter(resp["images"].values()))
     print(f"  image {name} → hash {entry['hash']} ({entry.get('width')}x{entry.get('height')})")
     # entry['url'] is temporary and the docs say not to use it in creative creation.
@@ -78,6 +82,11 @@ def upload_video(account: str, path: str) -> str:
     offsets desynced — the error payload carries the correct ones."""
     size = os.path.getsize(path)
     name = os.path.basename(path)
+    # Scraped Ads Manager (Power Editor) EAAB tokens are app-bound callers: advideos rejects
+    # them with 100/1363049 "A waterfall ID is required when the caller is a Facebook App"
+    # unless every phase carries one client-generated id (field-observed 2026-09-23).
+    # System User tokens accept it and ignore it.
+    waterfall = str(uuid.uuid4())
 
     # All three phases retry on a dropped connection. On a grey SOCKS exit a multi-chunk
     # upload will hit one, and without retries a single blip kills the whole file.
@@ -88,7 +97,7 @@ def upload_video(account: str, path: str) -> str:
     # better trade than failing a 200 MB upload on a transient.
     start = graph.post(
         f"{account}/advideos",
-        {"file_size": size, "upload_phase": "start"},
+        {"file_size": size, "upload_phase": "start", "waterfall_id": waterfall},
         context=f"advideos start {name}",
         idempotent=True,
     )
@@ -104,7 +113,7 @@ def upload_video(account: str, path: str) -> str:
             try:
                 resp = graph.call(
                     "POST", f"{account}/advideos",
-                    data={"upload_phase": "transfer", "upload_session_id": session_id,
+                    data={"upload_phase": "transfer", "upload_session_id": session_id, "waterfall_id": waterfall,
                           "start_offset": begin},
                     files={"video_file_chunk": (name, chunk)},
                     context=f"advideos transfer {name}",
@@ -128,7 +137,8 @@ def upload_video(account: str, path: str) -> str:
 
     graph.post(
         f"{account}/advideos",
-        {"upload_phase": "finish", "upload_session_id": session_id, "title": name},
+        {"upload_phase": "finish", "upload_session_id": session_id, "title": name,
+         "waterfall_id": waterfall},
         context=f"advideos finish {name}",
         idempotent=True,
     )
@@ -174,7 +184,8 @@ def thumbnail_hash(account: str, video_id: str) -> dict:
                                          delete=False)
     tmp = handle.name
     handle.close()
-    resp = graph.session().get(chosen["uri"], timeout=120)
+    # Plain session: fbcdn is not Graph, so the META_COOKIES header must not travel there.
+    resp = graph.plain_session().get(chosen["uri"], timeout=120)
     resp.raise_for_status()
     with open(tmp, "wb") as fh:
         fh.write(resp.content)

@@ -1,6 +1,6 @@
 ---
 name: senior-buyer-ops
-description: "Senior media-buyer / team-lead operating layer (clean and grey portfolios alike): day-1 operating contract, portfolio allocation across accounts (test/scale/reserve), kill/watch/scale + marginal scaling, creative-intelligence pipeline, end-to-end funnel QA, cross-platform (Meta + Google) allocation. Orchestrates meta-ads / meta-grey-ops / google-ads / google-grey-ops / google-feed-ops / tracker-ops / measurement-experimentation-ops."
+description: "Portfolio layer for 'what to kill, watch, or scale across accounts': day-1 operating contract, test/scale/reserve allocation, kill/watch/scale rules with marginal scaling, creative pipeline and funnel QA. Delegates buy/survive/count/measure mechanics to platform skills; owns cross-account decisions, not single-ad-set diagnosis."
 ---
 
 # Senior Buyer Ops
@@ -9,6 +9,7 @@ The layer above the four adapters (buy / survive / count / measure): they tell y
 this tells you WHAT to decide as the person accountable for a portfolio and a
 team's numbers. Call the adapters in order; this file owns the decisions between
 them.
+Status: unmeasured — no baseline task has been run for this skill; treat sections as unvalidated until one is.
 
 Route by platform, then by layer:
 
@@ -25,7 +26,7 @@ Platform-agnostic: trackers/metrics → `tracker-ops` · is-a-result-real →
 `references/01-portfolio-and-cadence.md` · creative production →
 `references/02-creative-ops.md` · funnel QA → `references/03-funnel-ops.md` ·
 automated kill/scale rules that survive small samples →
-`references/04-automated-rules.md` · which automation pipe (API/MCP/CSV/Sheets)
+`references/04-automated-rules.md` · spy intel via Tyver API (CLI `scripts/tyver.py`, join with team stats) → `references/07-tyver-spy-api.md` · which automation pipe (API/MCP/CSV/Sheets)
 for agent vs human → `references/05-automation-channels.md` · platform is Google → also read `references/06-google-lane.md` (contract additions, structure-doctrine rationale, channel detail).
 
 **Do not port structure doctrine between platforms** — Google splits by intent and unit economics, not by campaign count; merging price tiers/funnel stages the way Meta rewards fails there (mechanics: `references/06-google-lane.md`). TikTok differs again: delivery is creative-led, the documented learning signal is ~25 results (not 50), objects are created **enabled** by default, and there are only two bid strategies. The widely repeated "3-5 ad groups x 3-5 creatives, ABO then CBO" TikTok doctrine is an untested Meta port (`tiktok-ads/11`).
@@ -40,7 +41,9 @@ The single most expensive mistake is optimising against the wrong definition.
 Get these from the TL explicitly, don't infer:
 
 1. Payout event — WHICH tracker status/measure pays (lead? reg? FTD? qualified
-   FTD? confirmed COD?). Everything downstream is priced on this.
+   FTD? confirmed COD?). Everything downstream is priced on this. CPA pays per
+   qualified FTD; redeposits are unpaid on CPA (quality KPI only), paid only
+   on RevShare/Hybrid (FIELD 2026-09-27).
 2. Downstream stages + conversion lag — how long until the payout event matures
    (call-center confirm / deposit / KYC). Sets your judging window.
 3. Caps — daily/total offer caps; traffic past a cap is unpaid.
@@ -68,7 +71,8 @@ perishable claims in this skill; re-verify there by 2026-10-01 (post-Sept-1 AI M
 
 ## Cadence
 
-- Daily: spend→cost sync (tracker-ops) → per-account CPL vs target → kill/watch/
+- Daily: spend→cost sync (yesterday, per FB campaign, account tz; re-push at
+  end of day — tracker-ops/03) → per-account CPL vs target → kill/watch/
   scale (01) → update watchlist → report before the deadline.
 - Weekly: portfolio review — winner migration, replacement queue, creative
   backlog health, buyer/stock comparison (01).

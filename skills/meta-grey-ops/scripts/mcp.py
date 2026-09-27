@@ -7,7 +7,8 @@
 
 Needs META_TOKEN with scope `ads_mcp_management` (02 §5). Streamable HTTP: initialize once, keep
 Mcp-Session-Id. Errors arrive as result.isError with Graph error_code/error_subcode, localised
-messages — branch on the numbers. `call` enforces a read-only tool allowlist; every MCP create,
+messages — branch on the numbers. Traffic takes the same META_PROXY exit as graph.py (no-proxy
+only with META_ALLOW_NO_PROXY=1) and never carries META_COOKIES. `call` enforces a read-only tool allowlist; every MCP create,
 update, delete, upload, boost, and activation tool is rejected. Never prints the token.
 """
 from __future__ import annotations
@@ -16,8 +17,8 @@ import json
 import os
 import re
 import sys
-import urllib.error
-import urllib.request
+
+import graph
 
 URL = "https://mcp.facebook.com/ads"
 TOKEN = os.environ.get("META_TOKEN", "")
@@ -50,13 +51,17 @@ def _post(method: str, params: dict | None, sid: str | None, rid: int):
     body = {"jsonrpc": "2.0", "id": rid, "method": method}
     if params is not None:
         body["params"] = params
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(), headers=h, method="POST")
+    # graph.plain_session(): same proxy gate as every Graph call (exits when META_PROXY is
+    # unset and META_ALLOW_NO_PROXY is not 1), env proxies ignored, no Cookie header.
+    graph.register_secret(TOKEN)
     try:
-        r = urllib.request.urlopen(req, timeout=120)
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"HTTP {e.code}: {e.read().decode(errors='replace')[:300].replace(TOKEN, '<TOKEN>')}\n"
+        r = graph.plain_session().post(URL, data=json.dumps(body).encode(), headers=h, timeout=120)
+    except Exception as e:  # noqa: BLE001 - transport errors may embed proxy credentials
+        raise SystemExit(f"MCP transport error: {graph.redact(str(e))}") from None
+    if r.status_code >= 400:
+        raise SystemExit(f"HTTP {r.status_code}: {graph.redact(r.text[:300])}\n"
                          "401 here = token lacks ads_mcp_management or app lacks the MCP use case (02 §5)")
-    raw = r.read().decode()
+    raw = r.content.decode()
     msgs = [
         json.loads(line[5:].strip())
         for line in raw.splitlines()

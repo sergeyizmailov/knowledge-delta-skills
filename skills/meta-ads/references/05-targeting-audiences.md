@@ -35,13 +35,13 @@ Reviewed 2026-07-22. "Business Manager" → Business Portfolio; "ASC" folded int
 
 ## 4. Detailed Targeting After the 2025 Consolidation
 
-- **2025-03-31 → 2025-06**: Meta removed ad-set-level detailed targeting exclusions entirely (interest/behavior/demographic). Stated driver: 22.6% lower median cost/conversion without exclusions.
+- **2025-03-31 (Ads Manager) → 2025-06-10 (boosts)**: Meta removed ad-set-level detailed targeting exclusions entirely (interest/behavior/demographic) [official, facebook.com/business/help/458835214668072, verified 2026-09-25]. Stated driver: 22.6% lower median cost/conversion without exclusions.
 - **2025-06-10 / 2025-06-23**: niche sub-interests merged into broad groupings (e.g. CrossFit/powerlifting/bodybuilding → "Fitness & Exercise"); waves covered Interests then Behaviors/Demographics.
-- **2026-01-15**: campaigns still referencing removed interests stop delivering. [vendor-relayed timeline, not cross-confirmed against official Meta announcement]
+- **2026-01-15**: campaigns still referencing removed interests stop delivering. [timeline cross-confirmed 2026-09-24 across independent third parties (Brandwatch help center + 2+ practitioner blogs: 2025-06-23 consolidation start, 2025-12-15 selection cutoff, 2026-01-15 delivery cutoff) AND an official Meta Business Help Center page for the consolidation (facebook.com/business/help/458835214668072, located 2026-09-24) — treat the three dates as well-corroborated, the consolidation itself as official]
 - Stated driver: unconstrained AI outperforms — ~5% more Instagram ad conversions, ~3% Facebook, Q2 2025. [Meta-reported via vendor blog, uncertain] The "~50% ATT opt-in" figure is AppsFlyer's, not Meta's — canonical statement and geo spread: `tracker-ops/03`.
 - Remaining tabs: Demographics (age/gender/location/language/education/relationship/life events/work/financial/parents), Interests (11 broad groupings only, no niche sub-interests), Behaviors (purchase behavior, device, travel, digital activities, anniversaries, charitable giving — third-party behaviors reduced, first-party on-platform signals favored).
 - Still useful for: new accounts, niche products, B2B, low-volume objectives — pair with a broad audience; don't stack uninterpretable combos, judge by downstream value not CPM/CTR.
-- **Exclusions post-March 2025** — interest-exclusion has no replacement in Ads Manager. What still works: custom-audience exclusions at ad-set level (primary mechanism now), account-level/placement exclusions, creative-based filtering, clean CRM seed/exclusion lists pre-upload.
+- **Exclusions post-March 2025** — interest-exclusion has no replacement in Ads Manager. What still works: custom-audience exclusions at ad-set level (primary mechanism now), account-level controls (brand-protection only: placement/publisher/content exclusions, not audience), creative-based filtering, clean CRM seed/exclusion lists pre-upload.
 
 ## 5. Custom Audiences
 
@@ -113,13 +113,13 @@ Advantage+ audience: min age only is a control (§1). Original audiences / "furt
 
 ## Sources
 
-Jon Loomer (Advantage+ audience mechanics/UI/benchmarks; Advantage vs original expansion rules; 730d purchase retention) · AdAmigo (interest consolidation timeline, custom audience creation, engagement retention table) · Conversios (2025-06-23 consolidation date) · Madgicx (lookalike creation, seed LTV, CPA comparisons) · Balistro (seed quality hierarchy) · ivanmana/getkoro (lookalike % mechanics) · Thread Transfer / RKX Advertising (Advantage+ vs manual test data, May 2025) · adenslab/coinis (location/engagement UI detail) · mbadv/adsuploader/audiencelab/leadsbridge (setup walkthroughs, sizing heuristics). All practitioner-sourced, accessed 2026-07-22 — see prior version history for exact URLs if needed.
+Jon Loomer (Advantage+ audience mechanics/UI/benchmarks; Advantage vs original expansion rules; 730d purchase retention) · AdAmigo (interest consolidation timeline, custom audience creation, engagement retention table) · Conversios (2025-06-23 consolidation date) · Madgicx (lookalike creation, seed LTV, CPA comparisons) · Balistro (seed quality hierarchy) · ivanmana/getkoro (lookalike % mechanics) · Thread Transfer / RKX Advertising (Advantage+ vs manual test data, May 2025) · adenslab/coinis (location/engagement UI detail) · mbadv/adsuploader/audiencelab/leadsbridge (setup walkthroughs, sizing heuristics). All practitioner-sourced, accessed 2026-07-22. Exact source URLs were not preserved with this file — re-verify any cited figure live before quoting it.
 
 ## Gaps
 
 - Official Meta Business Help Center pages inaccessible to automated fetch (HTTP 400) — all UI/flow detail here is practitioner-sourced, not primary Meta docs.
 - Exact current min radius and available location controls vary by country/objective/special category/rollout — verify live.
 - Engagement-audience historical backfill vs forward-only accumulation not verified per subtype.
-- 2026-01-15 stop-delivery deadline for removed interests rests on vendor blogs, not cross-confirmed against official Meta announcement.
+- 2026-01-15 stop-delivery deadline for removed interests: three dates vendor-corroborated; the consolidation itself now has an official Meta Help Center page (facebook.com/business/help/458835214668072, located 2026-09-24) — re-check it live for the exact cutoff wording.
 - Advantage+ 33/28/13/7% benchmarks are vendor-relayed from a 2023 experiment; no newer official figure.
 - §6 CPA/ROAS comparisons are agency stats relayed by Madgicx, not primary sources.

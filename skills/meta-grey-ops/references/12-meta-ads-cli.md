@@ -32,7 +32,7 @@ multi-account run, no resume state, no currency guard, no proxy setting; rides o
 | DCO (dynamic creative) creative from local files | `meta ads creative create --images a.jpg --images b.jpg --titles … --bodies …` + ad set `--dynamic-creative` | our `launch.py` has no DCO kind |
 
 Do **not** use for the launch itself: no dry run, one account/invocation, defaults are Meta's
-(Advantage+ on, multi-advertiser inherits account default, attribution inherits 7d click unless
+(Advantage+ on, multi-advertiser inherits account default, attribution inherits 7d click only — no view, FIELD 2026-09-27 — unless
 `--attribution-spec` passed).
 
 ## Setup

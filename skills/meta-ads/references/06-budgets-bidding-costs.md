@@ -113,10 +113,25 @@ Claimed global avg CPM $6.59 — don't extrapolate to unlisted markets (no relia
 **2025–2026 consensus with Advantage+**:
 - Consolidate — fewest campaigns/ad sets for distinct objectives/geo/policy/budget/experiment needs. "Three campaigns max" is a practitioner template, not universal architecture.
 - Vendor-reported Advantage+ gains apply to specific test populations — compare vs. account baseline, don't assume a fixed 10–20% CPA benefit.
-- Advantage campaign budget (CBO) by default; ABO only for clean per-set-spend tests.
+- Advantage campaign budget (CBO) by default; ABO only for clean per-set-spend tests. Mechanics (eligibility, level moves, min/max semantics) are canonical in `03` §3 — this file owns the scaling decision, not the mechanism.
 - **10–20% "R&D" carve-out** (Tailored Edge Marketing 2025): Explore (small ABO tests, judge hooks/CTR/ATC) → Prove (Meta Experiments A/B, one purchase cycle) → Scale (move winners to broad/Advantage+).
 - Hybrid norm: gradual vertical ramp + controlled horizontal + automated rules.
 - **Value rules** (launched June 2025): adjust bids by age/gender/geo/placement without fragmenting into separate ad sets — modern replacement for manual geo-split scaling; raises CPM on up-weighted segments by design.
+
+**Andromeda-era delivery (2025–26, what changes in practice):** Meta's retrieval
+stage (Andromeda, eng post 2024-12-02: tens of millions of eligible ads →
+thousands of candidates; +6% recall / +8% quality on selected segments) plus the
+LLM-scale ranking rollout (Adaptive Ranking, Instagram Q4 2025: +3% conversions /
++5% CTR reported) means delivery reacts to creative diversity and signal quality
+more than to micro-structure. Practical consequences, all else equal: (1) ten
+conceptually distinct creatives beat ten variants of one image (creative is the
+targeting surface — but the auction on bid × estimated action × quality still
+runs, so "creative replaced bidding" overstates it); (2) clean Pixel+CAPI with
+deduplicated values is a delivery input, not just reporting (`08`); (3) no
+universal creative quota / refresh cadence / fatigue lifespan is published —
+size testing volume from budget, objective, conversion volume, and the evidence
+needed for the decision. Vendor "Andromeda-proof structure" claims are
+unverified — treat as hypotheses.
 
 ## 8. Test Budget Sizing
 
@@ -142,7 +157,7 @@ Derive from business economics, not a global monthly minimum: (1) break-even CPA
 
 ## Sources
 
-Practitioner: Tribe Up Academy/Jason Gan (budget mechanics), Stackmatix/TryVizUp/Coinis (minimum-budget floors), Jon Loomer (bid strategies + labels, learning-phase test), LaFactory (bid-strategy/75%-overspend synthesis), deepsolv/dancingchicken/Tailored Edge Marketing/getadplus/viralbrandworks/theoptimizer (scaling frameworks, value rules, Andromeda structure). Benchmarks: WordStream/LocaliQ 2025 (primary US panel), hawky.ai/sepia-lab/mbadv (WordStream re-reporting), adlibrary.com (Instagram/geo/seasonality, undisclosed methodology), AdAmigo (geo-tier table, undisclosed methodology, [uncertain]), AdMake AI (Triple Whale panel aggregation), Madgicx/Gupta Media/admanage.ai (secondary CPM/CPC datasets). All accessed 2026-07-22; full URLs in prior version if needed.
+Practitioner: Tribe Up Academy/Jason Gan (budget mechanics), Stackmatix/TryVizUp/Coinis (minimum-budget floors), Jon Loomer (bid strategies + labels, learning-phase test), LaFactory (bid-strategy/75%-overspend synthesis), deepsolv/dancingchicken/Tailored Edge Marketing/getadplus/viralbrandworks/theoptimizer (scaling frameworks, value rules, Andromeda structure). Benchmarks: WordStream/LocaliQ 2025 (primary US panel), hawky.ai/sepia-lab/mbadv (WordStream re-reporting), adlibrary.com (Instagram/geo/seasonality, undisclosed methodology), AdAmigo (geo-tier table, undisclosed methodology, [uncertain]), AdMake AI (Triple Whale panel aggregation), Madgicx/Gupta Media/admanage.ai (secondary CPM/CPC datasets). All accessed 2026-07-22; exact source URLs were not preserved with this file — re-verify any cited figure live.
 
 ## Gaps
 

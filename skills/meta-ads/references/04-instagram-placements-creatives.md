@@ -1,6 +1,6 @@
 # Instagram Placements & Ad Creatives
 
-Reviewed 2026-07-22.
+Reviewed 2026-07-22; Explore removal verified 2026-09-25.
 
 **Naming**: "Automatic placements"→**Advantage+ placements** (ad-set level). "Automatic advanced matching/dynamic creative enhancements"→**Advantage+ creative** (ad level). "ASC"→**Advantage+ sales** (early 2025). ODAX is the only objective set now (Awareness/Traffic/Engagement/Leads/App promotion/Sales) — sources naming "Conversions"/"Reach"/"Video views"/"Catalog sales" describe pre-ODAX UI. Placement UI groups: Feeds / Stories and Reels / In-stream ads for videos and Reels / Search results / Messages / Apps and sites.
 
@@ -14,7 +14,7 @@ Instagram placements in Manual mode:
 
 | UI group | Instagram placements |
 |---|---|
-| Feeds | Instagram feed, profile feed, Explore, Explore home |
+| Feeds | Instagram feed, profile feed, Explore home (Explore feed removed in v26.0) |
 | Stories and Reels | Stories, Reels |
 | In-stream ads for videos/Reels | Ads on Instagram Reels (overlay format) |
 | Search results | Instagram search results |
@@ -25,8 +25,8 @@ Instagram placements in Manual mode:
 - **Stories**: full-screen 9:16, ephemeral, land in the first second. Image auto-displays ~5–7s; video >60s auto-segments; native carousel = 3 cards max/unit; collection supported. More impressions than Feed. Only placement family (with Reels) where sound is a realistic expectation — design for sound-on AND captions for sound-off.
 - **Reels**: full-screen 9:16, fastest-growing at **~33%** of IG ad impressions, all-time high. Native look (trending audio, fast cuts, UGC) outperforms polished TV-style. Boosted-Reels-as-ads restrictions [Strike Social]: no Reels published before 2021-10-15; no licensed music (original audio or Meta Sound Collection only); no face/camera effects; no GIFs; no product tags. Max duration 15 min (spec); real-world 5–30s.
 - **"Ads on Instagram Reels"** (in-stream/overlay) ≠ "Instagram Reels" — appears as a banner/post-loop overlay on top of an existing organic Reel, not a standalone Reel; smaller, interruptive, different creative rules.
-- **Explore**: appears after a tap into the Explore grid content chain — high-intent discovery. Image/video/carousel.
-- **Explore home**: ad appears directly in the Explore grid before any tap (launched Oct 2022, opened via Marketing API Nov 2022) — distinct checkbox from "Explore," both needed for full coverage. Square 1:1, must read at thumbnail size.
+- **Explore (feed)**: removed as a placement in Marketing API v26.0 [official, 2026-09-25, developers.facebook.com/documentation/ads-commerce/marketing-api/marketing-api-changelog/version26.0]. Old specs/ad sets listing it need updating.
+- **Explore home**: ad appears directly in the Explore grid before any tap (launched Oct 2022, opened via Marketing API Nov 2022) — still listed in v26.0. Square 1:1, must read at thumbnail size.
 - **Profile feed**: ads inserted into a public profile's feed for non-followers (launched Oct 2022). Lower-intent, cheaper impressions, wider ratio range than Feed.
 - **Search results**: appears in results list after a search-post tap (announced 2023); small/growing; image+carousel; no headline field in some configs [uncertain: spec coverage thin].
 
@@ -39,6 +39,8 @@ Each placement has its own format/dimension/truncation rules and cost dynamics; 
 **Override to Manual when**: (1) Traffic/link-click/LPV optimization — inspect Audience Network separately for click quality, exclude only on account-data evidence or brand-safety need, never infer fraud from placement alone; (2) ThruPlay/video-view optimization — consider removing AN rewarded video (forced views inflate metrics); (3) Reach with frequency caps — algorithm chases cheapest placements, force Feeds if action matters (costs rise, accept it); (4) creative-format constraints — 9:16-only assets should limit to Stories/Reels rather than auto-crop from landscape; prefer per-placement asset customization over restricting placements; (5) placement-level testing (e.g. Reels-only ad sets for clean creative data); (6) brand-safety/compliance in regulated verticals. **Do NOT remove placements just because they show few results** — remove only placements producing low-quality versions of the exact optimized event.
 
 Gotchas: not all objectives support all placements (Messages only for sponsored-message campaigns); Advantage+ sales historically locked placement control, 2025 restored some — expect fewer manual options inside Advantage+ campaign types; placement selection lives at **ad set** level only (can't vary per ad); duplicated ad sets carry old placement choices — verify after duplicating.
+
+**Placement exclusions removal (in-product notice from ~20.08.2026, practitioner-confirmed 24.09.2026 — Loomer, ppc.land, Social Samosa, mgrowtech; NO formal Meta announcement, NO dated rollout plan, Help Center still describes the old UI):** ad sets lose the ability to exclude individual placements, platforms, devices, and operating systems. Replacement levers: **value rules** (bid multipliers +1000%/−90% — suppression, never true exclusion; only 7 eligible placements) and **account-level Placement Controls** (Advertising Settings → Account Controls). Performance-driven exclusions are arguable with data; **brand-suitability / compliance exclusions have no automated replacement** — escalate contractual/regulatory ones to the Meta rep in writing before the field disappears. Manual-checkbox guidance elsewhere in this file (§1, §3) is pre-removal — verify live per account before relying on it.
 
 ## 4. Creative specs per placement
 
@@ -54,7 +56,6 @@ Ratio cheat sheet: **1:1** — Feed safe default, Explore home grid, carousel ca
 | Profile feed | 1:1 (1.91:1–4:5) | 1080×1080 | 30 MB | 125 ch | 40 ch |
 | Stories | 9:16 | 1080×1920 (Sprout: 1440×2560) | 30 MB | 125 ch | — |
 | Reels | 9:16 | 1440×2560 rec. | 30 MB | **72 ch** | — |
-| Explore | 9:16 (Strike) / 1:1 (Sprout) [uncertain] | 1080×1080 | 30 MB | 125 ch | — |
 | Explore home | 1:1 | 1080×1080 | 30 MB | 125 ch | 40 ch |
 | Search results | Explore-style [uncertain] | 1080×1080 | 30 MB | 125 ch | — |
 
@@ -68,7 +69,6 @@ File types JPG/PNG, min width 500px, ratio tolerance ~1–3%, max 30 hashtags.
 | Profile feed | 4:5 (1.91:1–9:16) | 1080×1080 | 1s–60min | 4 GB |
 | Stories | 9:16 | 1080×1080 min | 1s–60min (15s+ segments) | 4 GB |
 | Reels | 9:16 | 500×888 min | up to 15min (spec) — target 5–30s | 4 GB |
-| Explore | 4:5 | 1080×1080 | 1s–60min | 4 GB |
 
 MP4/MOV (GIF ok in Feed/Stories); codec H.264, square pixels, fixed frame rate, progressive scan, AAC stereo 128kbps+. Design for sound-off comprehension; test whether audio materially helps the outcome.
 
@@ -77,6 +77,19 @@ MP4/MOV (GIF ok in Feed/Stories); codec H.264, square pixels, fixed frame rate, 
 ## 5. Formats
 
 Single image — fastest, strong for retargeting/offers, works everywhere. Single video — best for Reels/Stories/prospecting, needs hook discipline (§7). Carousel — 2–10 cards, 1:1 (4:5 in Feed per Sprout), 30MB image/4GB video per card, Stories carousel video ≤15s/card; each card own headline (40ch)+link; best for multi-product/feature breakdowns. Collection — cover image/video + catalog grid opening an Instant Experience (required); cover 1.91:1–1:1 (Feed/Stories), 9:16 cover with 1:1 product images for Reels; commerce/catalog accounts only. **Flexible ads** (replaced most of Dynamic Creative 2024–25) — up to 10 images/videos in one ad, Meta assembles per-user variations; use for variation testing without DCO overhead.
+
+## 5.1 Catalog creative pre-launch check
+
+- **Right catalog selected** — accounts often hold more than one; a spec pointing at the wrong
+  `catalog_id` builds real, deliverable ads against the wrong inventory silently.
+- **One product set per creative** — sharing a set across creatives blocks per-creative product
+  control and per-card ROAS (`content_id`) attribution.
+- **No unintended carousel** — a single-card spec (`force_single_link` + matching
+  `format_option`) collapses correctly; verify the built creative renders as one card, not a
+  carousel, when that was the intent.
+- **White vs target products in separate sets** — a cover/white product set and the real offer's
+  product set must not share items, or the review-layer split has nothing to split
+  (`meta-grey-ops/07`).
 
 ## 6. Advantage+ creative enhancements
 
@@ -116,7 +129,7 @@ Treat `≤6` active and the `3–5` practitioner range as starting heuristics, n
 4. Leaving Text improvements on during creative tests — invalidates attribution of what worked.
 5. Removing placements because "they don't convert" while optimizing for traffic — usually should remove Audience Network only, and only for traffic objectives.
 6. Restricting placements without a format/policy/quality/experimental reason — just reduces auction opportunities.
-7. Treating Explore and Explore home as one placement — separate checkboxes, different surfaces.
+7. Still sending the Explore feed position in v26+ specs — removed in v26.0; only Explore home remains.
 8. Ignoring per-placement previews — the yellow safe-zone overlay exists precisely to catch §2/§4 problems.
 9. Assuming Ads Manager > Preview shows what users saw — preview shows the unenhanced original; use Inspect per placement for enhancement-applied previews.
 10. Counting on >125 characters of primary text being read — write for truncation.

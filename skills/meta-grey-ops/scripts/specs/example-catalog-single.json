@@ -41,9 +41,10 @@
             "product_set_id": "REPLACE_ME_ONE_PRODUCT_SET",
             "format_option": "single_video",
             "link": "https://example-lander.tld/",
-            "message": "Primary text.",
+            "message": "-----",
             "cta": "PLAY_GAME",
-            "template_url": "https://example-lander.tld/?sub1={{ad.name}}&pid={{product.retailer_id}}"
+            "template_url": "https://example-lander.tld/?sub1={{ad.name}}&pid={{product.retailer_id}}",
+            "swap_to": "REPLACE_ME_TARGET_SKU"
           }
         }
       ]

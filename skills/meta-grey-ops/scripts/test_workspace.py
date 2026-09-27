@@ -2,6 +2,9 @@
 """Offline tests for the workspace and asset-graph contracts."""
 
 from __future__ import annotations
+import os as _os, tempfile as _tempfile
+_os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
+_os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
 import json
 import os
@@ -16,6 +19,8 @@ import asset_graph
 import jsonschema
 import meta_workspace
 import metaops
+
+os.environ.setdefault("META_TOKEN", "TEST_TOKEN")
 
 HERE = pathlib.Path(__file__).resolve().parent
 SCHEMA_DIR = HERE.parent / "schemas"
@@ -325,6 +330,36 @@ class WorkspaceTests(unittest.TestCase):
         with self.assertRaisesRegex(metaops.MetaOpsError, "intake-only"):
             metaops.command_doctor(args)
 
+    # -- token-agnostic workspace (Goal 1) -------------------------------------------
+
+    def test_app_id_and_system_user_id_are_optional(self) -> None:
+        data = valid_workspace()
+        del data["profiles"]["test"]["app_id"]
+        del data["profiles"]["test"]["system_user_id"]
+        meta_workspace.validate_workspace(data)  # must not raise
+
+    def test_token_kind_accepts_declared_values(self) -> None:
+        for kind in ("system_user", "user", "auto"):
+            data = valid_workspace()
+            data["profiles"]["test"]["token_kind"] = kind
+            meta_workspace.validate_workspace(data)  # must not raise
+
+    def test_token_kind_rejects_unknown_value(self) -> None:
+        data = valid_workspace()
+        data["profiles"]["test"]["token_kind"] = "bogus"
+        with self.assertRaisesRegex(meta_workspace.WorkspaceError, "token_kind must be one of"):
+            meta_workspace.validate_workspace(data)
+
+    def test_provisioning_requires_a_declared_system_user_id(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            data = valid_workspace()
+            del data["profiles"]["test"]["system_user_id"]
+            self.write_workspace(root, data)
+            workspace = meta_workspace.load_workspace(str(root))
+            with self.assertRaisesRegex(metaops.MetaOpsError, "has no system_user_id"):
+                metaops.require_provisioning_admin(workspace, "test")
+
 
 class AssetGraphTests(unittest.TestCase):
     def test_edge_limit_stops_pagination(self) -> None:
@@ -369,7 +404,11 @@ class AssetGraphTests(unittest.TestCase):
                     "product_count": 0,
                     "product_catalog": {"id": "16"},
                 },
-                "14/page_backed_instagram_accounts": {"data": [{"id": "18"}]},
+                # `page_backed_instagram_accounts` is a dead edge (`18`); the current code
+                # reads the Page node's own fields instead (asset_graph.py "workspace page
+                # instagram").
+                "14": {"id": "14", "connected_page_backed_instagram_account": {"id": "18"}},
+                "debug_token": {"data": {"type": "SYSTEM_USER", "app_id": "11"}},
             }
             edges = {
                 "10/owned_apps": [{"id": "11"}],
@@ -378,6 +417,7 @@ class AssetGraphTests(unittest.TestCase):
                 "12/assigned_pages": [{"id": "14"}],
                 "act_13/adspixels": [{"id": "15"}],
                 "12/assigned_product_catalogs": [{"id": "16"}],
+                "me/adaccounts": [{"id": "act_13", "name": "Account", "user_tasks": ["ADVERTISE"]}],
             }
 
             def fake_get(path: str, **kwargs: object) -> dict:
@@ -396,6 +436,7 @@ class AssetGraphTests(unittest.TestCase):
             self.assertEqual(report["failed_checks"], ["product_set:main"])
             self.assertTrue(core_report["ready"])
             self.assertEqual(core_report["scope"], "core")
+            self.assertEqual(report["token_kind"], "system_user")
 
     def test_catalog_plan_requires_all_scope_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -416,6 +457,124 @@ class AssetGraphTests(unittest.TestCase):
                 self.assertEqual(metaops.require_assets(workspace, "test", False)[0], core_path)
                 with self.assertRaisesRegex(metaops.MetaOpsError, "assets verify --scope all"):
                     metaops.require_assets(workspace, "test", True)
+
+    # -- token-agnostic workspace (Goal 1) -------------------------------------------
+
+    def test_resolve_token_kind_honours_explicit_declaration(self) -> None:
+        with mock.patch.object(asset_graph.graph, "get") as get:
+            self.assertEqual(
+                asset_graph.resolve_token_kind("10", {"token_kind": "user"}), "user"
+            )
+            self.assertEqual(
+                asset_graph.resolve_token_kind("10", {"token_kind": "system_user"}), "system_user"
+            )
+        get.assert_not_called()
+
+    def test_resolve_token_kind_auto_detects_via_debug_token(self) -> None:
+        def fake_get(path: str, **kwargs: object) -> dict:
+            del kwargs
+            self.assertEqual(path, "debug_token")
+            return {"data": {"type": "USER", "app_id": "999"}}
+
+        with mock.patch.object(asset_graph.graph, "get", side_effect=fake_get):
+            self.assertEqual(asset_graph.resolve_token_kind("10", {}), "user")
+
+    def test_resolve_token_kind_falls_back_to_business_system_users(self) -> None:
+        """debug_token unreadable with this credential: compare /me against
+        /{business}/system_users instead (02 — the same fallback assets verify already
+        used for the per-asset SU-edge checks before this token_kind refactor)."""
+        def fake_get_is_su(path: str, **kwargs: object) -> dict:
+            del kwargs
+            if path == "debug_token":
+                raise asset_graph.graph.GraphError(403, {"error": {"message": "denied"}}, path)
+            if path == "me":
+                return {"id": "12"}
+            if path == "10/system_users":
+                return {"data": [{"id": "12"}]}
+            raise AssertionError(f"unexpected path {path}")
+
+        with mock.patch.object(asset_graph.graph, "get", side_effect=fake_get_is_su):
+            self.assertEqual(
+                asset_graph.resolve_token_kind("10", {"system_user_id": "12"}), "system_user"
+            )
+
+        def fake_get_not_su(path: str, **kwargs: object) -> dict:
+            del kwargs
+            if path == "debug_token":
+                raise asset_graph.graph.GraphError(403, {"error": {"message": "denied"}}, path)
+            if path == "me":
+                return {"id": "999"}
+            if path == "10/system_users":
+                return {"data": [{"id": "12"}]}
+            raise AssertionError(f"unexpected path {path}")
+
+        with mock.patch.object(asset_graph.graph, "get", side_effect=fake_get_not_su):
+            self.assertEqual(asset_graph.resolve_token_kind("10", {}), "user")
+
+    def _user_token_fixture(self, *, advertise_task: bool = True):
+        """A BM-admin user token from a THIRD-PARTY developer app — the reported failure
+        (2026-09-24): app owned by a different BM, no System User tied to this token.
+        `token_kind: user` is declared explicitly so resolve_token_kind makes no extra
+        Graph calls."""
+        data = valid_workspace()
+        profile = data["profiles"]["test"]
+        profile["token_kind"] = "user"
+        profile["app_id"] = "999"        # not owned by business "10", not first-party
+        profile["system_user_id"] = "12"  # declared, but not actually tied to this token
+        objects = {
+            "10": {"id": "10", "name": "BM", "verification_status": "verified"},
+            "act_13": {
+                "id": "act_13", "name": "Account", "account_status": 1, "disable_reason": 0,
+                "currency": "USD", "timezone_name": "Europe/Warsaw",
+                "funding_source_details": {"id": "funding"}, "business": {"id": "10"},
+            },
+            "15": {"id": "15", "name": "Dataset"},
+            "14": {"id": "14", "connected_page_backed_instagram_account": {"id": "18"}},
+        }
+        tasks = ["ADVERTISE"] if advertise_task else ["ANALYZE"]
+        edges = {
+            "10/owned_apps": [{"id": "11"}],       # "999" is not in here
+            "10/system_users": [{"id": "77"}],     # "12" is not in here
+            "act_13/adspixels": [{"id": "15"}],
+            "me/adaccounts": [{"id": "act_13", "name": "Account", "user_tasks": tasks}],
+        }
+        restricted = {"12/assigned_ad_accounts", "12/assigned_pages"}
+
+        def fake_get(path: str, **kwargs: object) -> dict:
+            del kwargs
+            if path in restricted:
+                raise asset_graph.graph.GraphError(403, {"error": {"message": "denied", "code": 10}}, path)
+            if path in edges:
+                return {"data": edges[path]}
+            return objects[path]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            (root / "workspace.json").write_text(json.dumps(data), encoding="utf-8")
+            workspace = meta_workspace.load_workspace(str(root))
+            with (
+                mock.patch.object(asset_graph.graph, "get", side_effect=fake_get),
+                mock.patch.object(asset_graph.graph, "page_token", return_value="PAGE_TOKEN"),
+            ):
+                return asset_graph.verify_assets(workspace, scope="core")
+
+    def test_user_token_downgrades_app_and_system_user_ownership_to_warnings(self) -> None:
+        report = self._user_token_fixture(advertise_task=True)
+        self.assertTrue(report["ready"], report["failed_checks"])
+        self.assertEqual(report["token_kind"], "user")
+        warned = {row["check"] for row in report["checks"] if row.get("warning")}
+        self.assertEqual(warned, {"app_owned", "system_user_assigned"})
+        # A warning never blocks readiness — every warned row still reports ok=True.
+        self.assertTrue(all(row["ok"] for row in report["checks"] if row.get("warning")))
+
+    def test_account_access_still_requires_me_adaccounts_advertise_task(self) -> None:
+        """Softening app_owned/system_user_assigned for a non-System-User token does not
+        weaken the one proof that actually gates a write: the token's own
+        /me/adaccounts membership with an ADVERTISE task. This stays a hard gate for
+        every token kind."""
+        report = self._user_token_fixture(advertise_task=False)
+        self.assertFalse(report["ready"])
+        self.assertIn("account_token_access", report["failed_checks"])
 
 
 if __name__ == "__main__":

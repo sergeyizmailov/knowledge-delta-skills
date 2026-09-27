@@ -15,11 +15,18 @@ account tz.
   1_month_ago, first_day_of_this_month, 1_year_ago, first_day_of_this_year,
   all_time.
 - `cpl` metric: version-dependent (not always in openapi.json). Production-
-  verified = cost/leads exactly (170.95/9 = 18.9944). Use it when it works; else
-  compute CPL = cost / (count of your payout status). `cpa`/`cps` count
+  verified = cost/leads exactly (170.95/9 = 18.9944). `leads` drops regs that
+  already flipped to sale (below), so `cpl` overstates cost/reg once deps land —
+  use it only if payout = status lead and nothing flips; else compute CPL =
+  cost / (count of your payout status; reg payout = leads + sales). `cpa`/`cps` count
   acquisitions/sales, not necessarily your payout event.
 - NO `domain` dimension — use `source`/`referrer`.
 - sub_id range is `sub_id_1..30` (not 15). Also `extra_param_1..10`.
+- Cloak-condition shape "Sub ID N not empty" where sub_id_N is the campaign's
+  mapped param for `fbclid`: real ad clicks carry a genuine Meta-appended
+  `fbclid` — never place it in the tracking URL or hand-add `&sub_id_N=...`;
+  either satisfies the condition with junk and disables the bot filter
+  entirely.
 - `ad_campaign_id` = mappable source parameter, carries whatever token the
   campaign URL feeds it (id OR name) — NOT intrinsically utm_campaign, and
   distinct from Keitaro's internal `campaign_id`. `creative_id` = source
@@ -29,19 +36,46 @@ account tz.
 - Split by status via count metrics leads/sales/rejected (+ revenue variants,
   or flags is_lead/is_sale/is_rejected). `status` itself is a column only in
   conversion-scoped reports.
+- One conversion per click changes status in place (lead → sale), so `leads`
+  = regs that have NOT converted yet, not all regs. Reg→dep funnel: regs =
+  leads + sales (= `conversions` when no tid repeats/rejects), deps = sales.
+  Using `leads` as the reg count overstates reg→dep (FIELD 2026-09-27: 11 vs 17).
+- `revenue` includes lead_revenue: if the network postback sends payout on
+  `lead`, revenue/ROI is fake (FIELD 2026-09-27: $9,820 vs $1,650 real).
+  Money = `sale_revenue`; check lead_revenue = 0.
+- `range` without `interval` needs explicit `from`/`to` ("YYYY-MM-DD HH:MM");
+  tokens like `last_30_days` are rejected (FIELD 2026-09-27).
+- `sale_cr` is not a valid measure (errors); use `crs` (FIELD 2026-09-27).
 - If a name errors, response lists valid columns. Fallback: build in UI →
   DevTools → Network → /report/build → copy payload.
 
 ## Cost push: POST /clicks/update_costs
 
 Prefer per-entry (openapi `ClicksUpdateCostsPayload` requires timezone +
-currency per entry; production-verified). Top-level also works.
-`{campaign_ids:[ID], only_campaign_uniques:0,
+currency per entry; production-verified). Top-level `timezone`+`currency` also
+works (FIELD 2026-09-27: `{"success":true}` with `only_campaign_uniques:false`,
+filter `sub_id_1:"<FB campaign name>"` — use whichever param your URL maps).
+`{campaign_ids:[ID], only_campaign_uniques:false,
 costs:[{start_date,end_date,timezone,currency,cost, filters:{ad_campaign_id:"J41-16"}}]}`
 - Idempotent (re-push overwrites matched clicks). Push per completed account-tz
   day.
 - Filter keys: keyword, external_id, creative_id, ad_campaign_id, source,
   sub_id_1..30 (comma-lists ok).
+- `currency` = the ad account's currency as-is (EUR, etc.); Keitaro converts to
+  its base currency at its own rate (FIELD 2026-09-27: €102.71 → $116.99).
+  No manual FX. `timezone` = the ad account tz; the UI "Обновить расходы" form
+  defaults to the tracker tz (e.g. Europe/Moscow) and shifts the day.
+- Cost is spread only over clicks that match range + filters. A day/campaign
+  with spend but zero tracker clicks stores NOTHING (spend silently lost in
+  ROI) — reconcile source spend vs tracker cost after each push (FIELD 2026-09-27).
+- Readback lags: `{"success":true}` returns at once, report cost updates
+  seconds-to-minutes later — poll until the value matches, don't re-push (FIELD 2026-09-27).
+- 🔺 Campaign cost model CPA/CPS with "auto" ON adds the model's fixed cost per
+  NEW conversion on top of the pushed cost (fake cost → wrong ROI; FIELD
+  2026-09-27: $60/conv). Either
+  re-push at end of day after late conversions, or set the campaign cost model
+  to CPC 0 (`PUT /campaigns/{id}` `cost_type`/`cost_value`/`cost_auto`) with the
+  campaign owner's OK so only pushed cost counts.
 - `/campaigns/{id}/update_costs` exists but docs say "VERY SLOW" — use the
   clicks endpoint.
 - `/integrations/facebook` (native auto cost sync) may be blocked for
@@ -115,3 +149,12 @@ end-to-end — don't assume the postback works because the URL looks correct.
 - Bot clicks inflate `clicks` (not `campaign_unique_clicks`); cost spreads over
   all matching clicks → CPC looks diluted on bot days, but daily CPL vs your
   payout-status count stays correct.
+- Geo on mobile IPv6 resolves to carrier hubs, not the user's city
+  (FIELD 2026-09-27: Louisiana-only targeting, deps showed Texas cities) — not
+  a targeting/cloak leak; don't geo-kill on tracker city/region.
+- 🔺 DIAGNOSTIC TRAP: with an `fbclid`-keyed cloak condition (above), a manual
+  browser walk (hand-typed URL, no ad click) can NEVER carry a genuine
+  `fbclid` and so can NEVER reach the money lander. The white page on a
+  hand-typed visit is CORRECT behaviour, not a broken funnel — this produced a
+  wrong "funnel is broken" conclusion and cost real debugging time
+  (field-observed 2026-09-21). Verify by the click log, not by walking it.

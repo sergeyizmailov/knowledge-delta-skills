@@ -79,10 +79,15 @@ scheduled fetch overwrites API edits.
 
 - **Image cache by URL**: Meta will not re-fetch a changed image behind the same URL. New image →
   new URL (`?v=2` or new filename). Same for `link` swaps: change the value, not the target page.
+- **`raw.githubusercontent.com` caches 404s** (~5 min). Probing a URL before the file is pushed
+  poisons it: the push succeeds, the API returns the `download_url`, and raw keeps serving 404
+  while `GET /repos/{owner}/{repo}/contents` already lists the file. Never curl the URL first;
+  if you did, push under a name that was never requested (`tr_08_v1.jpeg`) rather than waiting.
+  Verified 2026-09-22.
 - Feed `link` may carry the macro tail (`?utm_campaign={{campaign.name}}&adset_id={{adset.id}}…`)
   — put it in before first delivery (`04`).
 - Price/availability must equal the landing page (Meta rejects items; MC preemptive disapproval).
 - `image_link` must be crawler-stable and `https`; fbcdn signed URLs fail.
-- Swap gate applies (`04`): change rows only when every ad on the catalog is out of review and
-  has delivered; a reject on the white page stops the swap.
+- Swap gate applies (`04`): `feed swap` changes rows as soon as every ad showing those items (sets
+  holding the ids + rule-based sets) is approved; unrelated ads never hold it; never wait for delivery.
 - Sheet limit is 10M cells (not 5M); stray formatting, not rows, is what hits it.

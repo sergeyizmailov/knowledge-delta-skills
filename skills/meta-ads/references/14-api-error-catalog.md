@@ -20,6 +20,10 @@ Two tiers:
   branch on the number per the rule above; just don't cite it to anyone as documented,
   and confirm the pair against a live error on your own account before relying on it.
 
+Sections: Auth 190 · App mode & permissions · Object creation · Creative
+enhancements note (v22.0+) · Import & delivery · Rate limits · Batching. Read
+only the section the failing call points to.
+
 ## Auth 190 (doc-confirmed — Graph API "Handle Errors" page, not the Marketing API error reference)
 
 Subcodes: 458/459, 460 (password changed OR security rotation; also the "user
@@ -40,6 +44,10 @@ long-lived immediately, store in a secrets manager.
   33 = missing/inaccessible object). Request access or use UI.
 - Asset access denied = asset not shared to the token user/SU or ad account →
   check BM assignments before debugging code.
+- 200 "Ad account owner has NOT grant ads_management or ads_read permission" from a **System
+  User token** (field-observed 2026-09-22): looks like a scope issue, but the account was
+  disabled AND removed from the portfolio — it's gone, not under-permissioned. Check
+  `client_ad_accounts` before debugging scopes.
 
 ## Object creation (field-observed — in neither published error reference)
 
@@ -51,7 +59,47 @@ long-lived immediately, store in a secrets manager.
 - 2446814: Lead/Submit Application blocked under Sales objective → use
   OUTCOME_LEADS.
 - 1815045 "no access to pixel": assign pixel to the ad account (BM → Data
-  Sources → Datasets → Assign). Ads recover automatically; no rebuild.
+  Sources → Datasets → Assign). Ads recover automatically; no rebuild. API fix, no Business
+  Settings clicking (doc-confirmed — Graph API reference `ads-pixel/shared_accounts`, live
+  2026-09-21): `POST /{pixel_id}/shared_accounts` with `account_id=<id, no act_ prefix>` and
+  `business=<bm_id>` → `{"success": true}`.
+- 100 / subcode **1784018** "Business has not accepted Pixel Terms of Service" (live
+  2026-09-21, brand-new Business Manager) on `POST /{business_id}/adspixels`: not fixable via
+  API. Consent screen appears only when creating a WEB dataset by hand — Business Settings →
+  Data Sources → Datasets & pixels → Add. The App dataset auto-created with a developer app
+  (id == app id) does NOT trigger it and is NOT a web pixel — don't mistake one for the other.
+  Field-observed only (searched 2026-09-22, absent from every published reference).
+- 100 / subcode **4834005** "Cannot Use Ad Set Budget Sharing Without Bid Strategy"
+  (doc-confirmed — Marketing API "Ad Set Budget Sharing" guide; live 2026-09-21): campaign
+  create with `is_adset_budget_sharing_enabled=true` fails unless `bid_strategy` is also set
+  (`LOWEST_COST_WITHOUT_CAP` verified working). Distinct from sibling subcode **4834011**
+  "is_adset_budget_sharing_enabled required... starting v24 if not setting budget at the
+  campaign level" (meta-grey-ops/04): 4834005 is the missing-bid-strategy gap, 4834011 is the
+  missing-field gap; don't conflate them.
+- 200 / subcode **4841013** "The user does not have the permission for this action" on
+  `POST /{campaign_id}` — **undocumented**: absent from the Marketing API error reference (which
+  lists only 1870034 and 1870047 under code 200), from Stack Overflow and from the bug tracker
+  (searched 2026-09-22). Two things it is NOT: a budget ceiling (those are 1885183 / 1885272 /
+  2446307, and 1487901 for the minimum) and, in our case, a missing token task.
+  🔺 Field-observed 2026-09-22: it is what a **just-disabled ad account** answers while the
+  disable has not surfaced anywhere else yet. Same token had created the campaign, ad set,
+  creative and ad minutes earlier; a re-run through validate_only returned the honest
+  100 / **1885316** "Only active accounts can create or edit ads", and the account read back
+  `account_status: 2, disable_reason: 1`. **Read `account_status` before chasing permissions.**
+  One third-party report (a GitHub PR, not a Meta source) hits the same subcode on a status
+  change with a failed Page-to-business share, so a broken asset grant may produce it too —
+  treat the subcode as "this object is not writable", not as a specific cause.
+- 200, no subcode, `"API access blocked."` (field-observed 2026-09-24 — absent from the
+  Marketing API error reference, which lists only 1870034 and 1870047 under code 200). Do not
+  confuse with 4841013 just above: this is the **app or system user** being restricted, not the
+  ad account. Fires identically on every Graph path, including `/me` and the app's own node.
+  Ruled out the proxy: a deliberately bogus token through the same proxy exit returns a normal
+  190 "Invalid OAuth access token", and the exit IP still resolves correctly — the block follows
+  the app, not the network path.
+  🔺 Diagnostic — call `/me`: still answers → the restriction is scoped to one ad account, go
+  check 4841013 / `account_status` above, not this entry. `/me` itself fails with this same
+  message → the app/system user is restricted, no ad account is at fault. Either way, a plain
+  190 anywhere means neither of the above — it's an ordinary dead token, mint fresh.
 - 2703 / subcode 2490336: a cost or ratio condition (`cpa`, `cost_per_*`,
   `website_purchase_roas`) on an AD-SET- or AD-scoped automated rule → rejected
   at rule creation, for every action except CHANGE_BUDGET / CHANGE_BID —
@@ -76,6 +124,8 @@ long-lived immediately, store in a secrets manager.
   disapproval stands. Help Center: editing the violating component (creative, targeting,
   landing page) re-submits it for review; build new only when the creative/offer itself is
   non-compliant (grey-ops practice: don't fight rejects, leave them off — meta-grey-ops/05).
+- 31 / subcode **3858013** "You need to verify a phone number for this ad account" on POST `/ads` (field 2026-09-26, fresh farm account): Meta's new-advertiser phone gate. Campaign/ad set/creative create fine; only the ad fails, and in the UI the prompt appears when Advantage+ catalog ads is switched on. Fix: persona verifies a phone in Ads Manager (SMS), then resume. Not fixable via API.
+- **#10** on `POST /{page_id}/page_backed_instagram_accounts`: the endpoint is deprecated (v22.0, all versions since 2025-04-21). Create the PBIA in the UI (Identity → Use Facebook Page).
 - 100 / subcode **1772103** "Instagram Account Is Missing" on POST `/ads`: the
   ad set's placements include Instagram and the CREATIVE carries no IG identity.
   It is a creative-identity error, never "this account/Page can't run Instagram"
@@ -94,7 +144,12 @@ long-lived immediately, store in a secrets manager.
 - 100 / subcode **3858504** (live, validate_only, v26.0, 2026-09-02): `standard_enhancements` key
   present in `degrees_of_freedom_spec.creative_features_spec` → "standard enhancements field no
   longer supported, set individual features instead". Remove the key; opt out every other feature
-  by name (`meta-grey-ops/scripts/launch.py DEFAULT_OPT_OUT`, 83 live keys).
+  by name (`meta-grey-ops/scripts/launch.py DEFAULT_OPT_OUT`, 83 live keys). Confirmed 2026-09-21:
+  no single off switch exists — each feature key needs its own `enroll_status: OPT_OUT`, plus
+  `contextual_multi_ads: OPT_OUT` sent separately (not part of `creative_features_spec`; absent
+  from the official Standard Enhancements page — field-observed only). Sending 16 keys read back
+  as all 83 OPT_OUT: Meta expands the list server-side and defaults the rest off, so enumerating
+  every key is unnecessary.
 
 - **HTTP 503 with no Graph error body** (live 2026-09-02 on `POST /act_X/adcreatives`): Meta's
   edge answered, the API did not. The outcome is unknown — nothing existed afterwards in this

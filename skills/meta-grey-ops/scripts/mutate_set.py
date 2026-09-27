@@ -29,11 +29,25 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 
 import graph
 
 SET_FIELDS = "id,name,product_count,filter,product_catalog{id,name}"
 COLLECTION_MIN = 4
+
+
+def equivalent_filters(ids: list[str]) -> list[dict]:
+    """Same membership, different literal filter: is_any, eq (one id), reversed list, and/or wraps."""
+    shapes: list[dict] = [{"retailer_id": {"is_any": ids}}]
+    if len(ids) == 1:
+        shapes.append({"retailer_id": {"eq": ids[0]}})
+    else:
+        shapes.append({"retailer_id": {"is_any": list(reversed(ids))}})
+    shapes += [{"and": [{"retailer_id": {"is_any": ids}}]}, {"or": [{"retailer_id": {"is_any": ids}}]}]
+    if len(ids) == 1:
+        shapes += [{"and": [{"retailer_id": {"eq": ids[0]}}]}, {"or": [{"retailer_id": {"eq": ids[0]}}]}]
+    return shapes
 
 
 def show(set_id: str) -> dict:
@@ -74,8 +88,19 @@ def main() -> int:
         sys.exit("pass --show, --retailer-ids, or --filter")
 
     print(f"\n  applying filter {json.dumps(new_filter)}")
-    graph.post(args.set_id, {"filter": new_filter}, context="mutate product set",
-               idempotent=True)
+    # 10803/1798073: another set already has this exact filter (several one-product sets on one SKU).
+    # Meta compares the filter literally, so equivalent shapes are accepted (field 2026-09-26: B1 had
+    # is_any, D1 took eq, E1 needed a third shape). Try them in order; --filter is sent as given.
+    shapes = [new_filter] if args.filter else equivalent_filters(ids)
+    for n, new_filter in enumerate(shapes):
+        try:
+            graph.post(args.set_id, {"filter": new_filter}, context="mutate product set",
+                       idempotent=True)
+            break
+        except graph.GraphError as e:
+            if e.subcode != 1798073 or n == len(shapes) - 1:
+                raise
+            print(f"  duplicate filter on another set; retrying as {json.dumps(shapes[n + 1])}")
 
     print()
     after = show(args.set_id)
@@ -85,6 +110,23 @@ def main() -> int:
               "double-encoding trap. Pass an object and let it be encoded once.",
               file=sys.stderr)
         return 1
+
+    if args.retailer_ids:
+        # A changed filter is not proof: an id missing from the catalog leaves the set EMPTY and the
+        # ads stop delivering. Membership must equal the requested ids (a few tries: it can lag).
+        want = sorted(ids)
+        for attempt in range(4):
+            got = sorted(str(p.get("retailer_id")) for p in graph.get(
+                f"{args.set_id}/products", params={"fields": "retailer_id", "limit": 500},
+                context="set members").get("data", []))
+            if got == want:
+                break
+            time.sleep(5)
+        if got != want:
+            print(f"\nSET MEMBERS {got} != requested {want}. Check the retailer ids exist and are "
+                  "published in this catalog.", file=sys.stderr)
+            return 1
+        print(f"  members       {got}")
 
     print("\nSet mutated. No ad re-review is triggered by a membership change.")
     print("Card renders lag 15-60 min and preview popups cache — verify via API, not previews.")

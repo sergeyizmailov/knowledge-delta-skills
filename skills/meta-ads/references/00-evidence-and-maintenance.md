@@ -53,7 +53,7 @@ Include the evidence label inline for high-impact recommendations. Prices, thres
 | 2FA | May be required for certain portfolios/workflows; not a uniform product requirement. | Check in-product; [context](https://support.chatarchitect.com/books/meta-business-portfolio-setup/page/turn-on-the-two-factor-authentication-requirement-in-your-business-portfolio) |
 | Offline event ingestion | Separate Offline Conversions API references can be stale; design around current CAPI routes. | [CAPI overview](https://www.facebook.com/business/help/AboutConversionsAPI) |
 | Meta-enabled CAPI | No-code option announced April 2026; availability account-dependent. | [Official](https://about.fb.com/ltam/news/2026/04/eliminar-barreras-tecnicas-para-ayudar-a-empresas-de-todos-los-tamanos-a-aprovechar-mas-sus-anuncios/amp/) |
-| Detailed targeting exclusions | Availability depends on campaign state/rollout; don't assume the legacy control exists. | [Official](https://www.facebook.com/help/messenger-app/717368264947302/) |
+| Detailed targeting exclusions | Removed: Ads Manager 2025-03-31, boosts 2025-06-10. Custom-audience exclusions remain. [verified 2026-09-25] | [Official](https://www.facebook.com/business/help/458835214668072) |
 | EU political/electoral/social-issue ads | No longer delivered in EU from Oct 2025; confirm current scope. | [Official](https://about.fb.com/news/2025/07/ending-political-electoral-and-social-issue-advertising-in-the-eu/) |
 
 ## 4.1 Marketing API version anchor (2026-08)
@@ -66,7 +66,7 @@ A Marketing API version is available **~12 months TOTAL** (v24.0 ran 2025-10-08 
 |---|---|---|---|
 | v22.0 | 2025-01-21 | expired | `instagram_actor_id`→`instagram_user_id`; `enable_standard_enhancements`→`creative_features_spec`. See `13` §5, `04`, `14` |
 | v23.0 | 2025-05-29 | expired | — |
-| v24.0 | 2025-10-08 | available until 2026-10-06 | `marketing-api/versions` page lags (still names v25 current, no dates) — use changelog |
+| v24.0 | 2025-10-08 | ends 2026-10-06 — calls pinned to v24 fail after | `marketing-api/versions` page lags (still names v25 current, no dates) — use changelog |
 | v25.0 | 2026-02-18 | supported, TBD | — |
 | **v26.0** | **2026-07-29** | **current, no expiry** | Reference for `14`/`02`§9. Removed `delivery_estimate.daily_outcomes_curve`/`budget_guardrail`/`estimate_dau`; HEC-F campaigns require explicit `targeting_automation.advantage_audience`; IG Explore placement gone; Messenger `story` position removed; poll ads unsupported |
 

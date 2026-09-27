@@ -56,7 +56,12 @@ clustered deaths can be coincidence at low counts).
 
 Keep a short library: {symptom + timing + shared attribute → confirmed cause →
 fix}. A new wave usually rhymes with an old one — matching the fingerprint skips
-re-diagnosis. Distinct fingerprints: instant day-0 disable across a batch
+re-diagnosis. FIELD 2026-09-27: single account disabled ~6h after its heaviest API day (4 CBO campaigns over 24/09 +
+26/09, two an hour apart, 10 ad sets/10 ads, + a code 17/2446079 storm the tool sleep-retried 60→300s for ~12 min),
+weakest account in the set ($43 lifetime, $2 billing threshold, 21 micro-charges); UI reason = Account Integrity
+"created or used with an automation that doesn't follow our rules" (`disable_reason` 1). Sibling accounts on the
+same SU token/page/domain with lighter API load survived. Cause NOT proven (same reason hits manual advertisers and
+whole agency lines, `02` §8) → pacing adopted anyway (`00` §5). Distinct fingerprints: instant day-0 disable across a batch
 (supply/verification); gradual CPM climb then death (creative heat/policy drift);
 simultaneous checkpoint across one subnet (proxy cluster/geo-mismatch);
 single-domain collapse to ~0 LP CTR (domain/SSL/cloak fault, not a ban —

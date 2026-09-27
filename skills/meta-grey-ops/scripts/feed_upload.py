@@ -23,6 +23,11 @@ UPLOAD_FIELDS = "id,start_time,end_time,input_method,url,num_detected_items,num_
 
 
 def start(feed_id: str, url: str, update_only: bool) -> str:
+    # Duplicate-safe by design (no in-flight needed): POST /{feed_id}/uploads only
+    # triggers another fetch of the SAME url. Re-posting after outcome_unknown may
+    # start a second fetch, but both converge to the same catalog state — no money
+    # moves, no twin objects. Poll the returned upload id; if the POST itself broke
+    # unknown, re-post the identical payload and poll the new id.
     data: dict = {"url": url}
     if update_only:
         data["update_only"] = True

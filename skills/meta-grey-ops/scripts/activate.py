@@ -146,7 +146,7 @@ def main() -> int:
 
     camp = graph.get(
         campaign_id,
-        params={"fields": "name,daily_budget,objective,effective_status"},
+        params={"fields": "name,daily_budget,objective,status,effective_status"},
         context="pre-activation read",
     )
     print(f"About to activate: {camp.get('name')}")
@@ -190,23 +190,34 @@ def main() -> int:
             if e.subcode == 2490468 or "2490468" in str(e):
                 print("          rejected ad — build a NEW ad, editing will not clear it",
                       file=sys.stderr)
-            if key == "campaign":
-                done = order[:order.index(key)]
-                print(f"\nThe campaign was NOT activated, so nothing is spending. "
-                      f"{len(done)} child object(s) are ACTIVE and idle beneath it: {done}.",
-                      file=sys.stderr)
-                return 1
             done = order[:order.index(key)]
-            print(f"\nSTOPPED. The campaign was NOT activated, so nothing is spending — "
-                  f"but {len(done)} child object(s) were already set ACTIVE before this "
-                  f"failure: {done}. They deliver nothing while the campaign is paused. "
-                  f"Fix this object and re-run: re-activating the others is a no-op.",
-                  file=sys.stderr)
+            print(f"\n{halt_message(key, camp.get('status'), done)}", file=sys.stderr)
             return 1
 
     print("\nActivated. A successful mutation does not mean spend started.")
     print("Read delivery back within the hour: effective_status, spend, and the tracker.")
     return 0
+
+
+def halt_message(failed_key: str, campaign_status: str | None, done: list[str]) -> str:
+    """What is (not) spending after a stopped activation, worded from the campaign's real
+    configured status — a reused or already-ACTIVE campaign means the children set ACTIVE
+    above ARE delivering, and saying "nothing is spending" would be false."""
+    live = campaign_status == "ACTIVE"
+    if failed_key == "campaign":
+        if live:
+            return (f"The campaign activate call failed, but it already reads ACTIVE, so the "
+                    f"{len(done)} ACTIVE child object(s) beneath it can spend now: {done}.")
+        return (f"The campaign was NOT activated (status {campaign_status}), so nothing is "
+                f"spending. {len(done)} child object(s) are ACTIVE and idle beneath it: {done}.")
+    if live:
+        return (f"STOPPED. The campaign is already ACTIVE, so the {len(done)} child object(s) "
+                f"set ACTIVE before this failure are spending now: {done}. Pause them "
+                f"(edit status --confirm PAUSE) or fix this object and re-run.")
+    return (f"STOPPED. The campaign was NOT activated (status {campaign_status}), so nothing is "
+            f"spending — but {len(done)} child object(s) were already set ACTIVE before this "
+            f"failure: {done}. They deliver nothing while the campaign is paused. "
+            f"Fix this object and re-run: re-activating the others is a no-op.")
 
 
 if __name__ == "__main__":

@@ -34,11 +34,30 @@ import json
 import os
 import pathlib
 import sys
+import tempfile
 from typing import Any
 
 import launch
 
 BULK_DIR = os.environ.get("METAOPS_BULK_DIR", os.path.join(launch.STATE_DIR, "bulk"))
+
+
+def atomic_write_text(path: pathlib.Path, text: str) -> None:
+    """Crash-safe write with 0o600: mkstemp in the target dir + chmod + os.replace.
+
+    A bare write_text can leave a half-written spec/marker after a crash, and a
+    world-readable state file leaks account topology. Same contract as
+    metaops.atomic_json / metaops.state_lock (0o600)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def deep_merge(base: dict, over: dict) -> dict:
@@ -88,7 +107,7 @@ def resolve(template: dict, row: dict, run: str) -> tuple[dict, str]:
     out_dir = pathlib.Path(BULK_DIR) / run
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{tag}.json"
-    path.write_text(json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_text(path, json.dumps(spec, indent=2, ensure_ascii=False))
     return launch.load_spec(str(path)), str(path)
 
 
@@ -185,7 +204,7 @@ def main() -> int:
                      f"before every account's spec validated against the CURRENT template and accounts.")
 
     kinds = template_creative_kinds(template)
-    risky = kinds & {"dlo", "catalog_collection", "catalog_single"}
+    risky = kinds & {"dlo", "catalog_collection", "catalog_single", "catalog_carousel"}
     if risky and not args.dry_run and len(rows) > 1 and not args.dlo_tested:
         sys.exit(f"Template uses {sorted(risky)} creatives on {len(rows)} accounts. A dry run cannot "
                  "prove the objective/creative combination is accepted (04 → DLO). Build ONE such ad "
@@ -193,6 +212,7 @@ def main() -> int:
 
     seen_fps: dict[str, str] = {}
     results: list[tuple[str, str, str]] = []
+    statuses: set[str] = set()
     for row in rows:
         acct = launch.graph.normalize_account(row["account_id"])
         row["account_id"] = acct
@@ -217,14 +237,18 @@ def main() -> int:
             seen_fps.setdefault(fp, acct)
 
         state_path = os.path.join(launch.STATE_DIR, f"{spec['run_id']}.json")
-        state = launch.State(state_path)
         print(f"  spec  → {path}\n  state → {state_path}")
         try:
+            state = launch.State(state_path)
             launch.run(spec, state, args.dry_run)
             results.append((acct, "DRY OK" if args.dry_run else "BUILT", state_path))
-        except SystemExit as e:
-            results.append((acct, "FAILED", f"{e} (state {state_path})"))
-            print(f"  x {acct}: {e}", file=sys.stderr)
+            statuses.add(spec["create_status"])
+        except (SystemExit, launch.graph.GraphError, OSError, ValueError) as e:
+            # SpecError is a SystemExit; a bare GraphError (account read, PBIA lookup) or an
+            # unreadable state file must fail THIS account only, not the whole batch.
+            detail = launch.graph.redact(str(e))
+            results.append((acct, "FAILED", f"{detail} (state {state_path})"))
+            print(f"  x {acct}: {detail}", file=sys.stderr)
             continue
         if args.verify and not args.dry_run:
             import subprocess
@@ -238,14 +262,21 @@ def main() -> int:
     failed = [r for r in results if r[1] not in ("DRY OK", "BUILT", "BUILT+VERIFIED")]
 
     if args.dry_run and not failed and results:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(json.dumps({"inputs_sha": inputs_sha, "accounts": [r[0] for r in results]}))
+        atomic_write_text(
+            marker, json.dumps({"inputs_sha": inputs_sha, "accounts": [r[0] for r in results]})
+        )
+        build = "PAUSED" if statuses == {"PAUSED"} else "ACTIVE (spends on create)"
         print(f"\nDry run passed for {len(results)} account(s): campaigns and creatives validated by "
               "the API, ad sets and ads locally (parents do not exist yet; the real run probes them). "
-              "Re-run without --dry-run to build PAUSED.")
+              f"Re-run without --dry-run to build {build}.")
     elif not args.dry_run and not failed:
-        print(f"\n{len(results)} tree(s) built PAUSED. Return to metaops for verification and "
-              f"per-account activation. Nothing spends until then.")
+        if statuses == {"PAUSED"}:
+            print(f"\n{len(results)} tree(s) built PAUSED. Return to metaops for verification and "
+                  f"per-account activation. Nothing spends until then.")
+        else:
+            print(f"\n{len(results)} tree(s) built and LIVE: campaigns, ad sets and ads ACTIVE "
+                  f"(reused campaigns keep their status). Spend has started — run metaops "
+                  f"verify/status on each tree now.")
     if failed:
         print(f"\n{len(failed)} account(s) need attention. Trees that did build are intact — "
               f"fix the failed rows and re-run; built accounts resume from state.", file=sys.stderr)

@@ -1,8 +1,9 @@
 # 03 — Funnel ops (end-to-end QA)
 
 The dead zone between meta-ads (ad) and tracker-ops (numbers): click-to-conversion chain. When
-leads vanish but delivery looks fine, it's almost always here. Cloaking mechanics assumed known —
-this is the QA that catches where the chain silently breaks.
+leads vanish but delivery looks fine, it's almost always here. Cloaking MECHANICS (how a filter
+decides black/white) assumed known — this file is the QA that catches where the chain silently
+breaks, including two objects agreeing on paper but disagreeing on who they let through.
 
 ## Click-ID persistence (the #1 silent killer)
 
@@ -17,6 +18,28 @@ this is the QA that catches where the chain silently breaks.
   anchor, no params) severs it.
 - Test: click a live ad end-to-end, watch the query string at each hop, fire a test conversion,
   confirm it lands on the right subid in the tracker.
+
+## Cloaker filter ↔ Meta targeting alignment
+
+- **Device/OS**: the cloaker's device/OS filter must exactly match the ad set's `user_os`
+  targeting. Android-only cloak + ad sets not restricted to `user_os: Android` → iOS clicks get
+  served the white page (paid-for traffic filtered out) or, if the cloak is looser than
+  targeting, non-target OS gets the black page (budget burned on clicks that can never convert).
+- Same rule for GEO: cloaker GEO allowlist must match ad-set geo-targeting, or the same two
+  failure modes hit on country instead of OS. Check both every time targeting changes — a
+  geo-expansion that forgets the cloaker is the common trigger. Tracker geo on mobile IPv6 maps
+  to carrier hubs (out-of-target cities on real deps) — not a leak by itself (tracker-ops/01,
+  FIELD 2026-09-27).
+
+## Creative ↔ offer match (pre-launch)
+
+Before an ad goes live, verify each creative's GEO, language, currency, and on-image logo/sizes
+match the offer it's paired with — a mismatch here presents as a targeting or conversion problem
+downstream but is actually a build error caught for free by looking once. Approaches (game-first
+vs offer logo vs local-brand spoof) and which moves FTD vs CTR: meta-grey-ops
+`playbooks/casino.md` § Creative packaging. Each creative also needs its own sub + creative_id
+so results attribute per-creative (mapping mechanics: tracker-ops/03 § Markup & the mapping contract
+— don't split by campaign name alone here).
 
 ## WebView / in-app browser / Telegram / PWA
 

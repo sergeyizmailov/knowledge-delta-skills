@@ -2,6 +2,9 @@
 """Offline contract tests for cmd_business.py. No network or real credentials."""
 
 from __future__ import annotations
+import os as _os, tempfile as _tempfile
+_os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
+_os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
 import os
 import pathlib
@@ -148,7 +151,10 @@ class CmdBusinessTests(unittest.TestCase):
                 name="Acct", currency="USD", timezone_id=1,
                 end_advertiser="30", media_agency=None, partner=None, funding_id=None,
             )
-            with mock.patch.object(metaops.graph, "post", return_value={"id": "123"}) as post:
+            with (
+                mock.patch.object(cmd_business, "_list_edge", return_value=[]),
+                mock.patch.object(metaops.graph, "post", return_value={"id": "123"}) as post,
+            ):
                 code, payload = cmd_business._adaccount_create(metaops, args)
             self.assertEqual(code, 0)
             self.assertTrue(payload["ok"])
@@ -171,7 +177,10 @@ class CmdBusinessTests(unittest.TestCase):
                 workspace_obj=workspace, profile="test", confirm="CREATE",
                 name="Px", is_crm=True,
             )
-            with mock.patch.object(metaops.graph, "post", return_value={"id": "555"}) as post:
+            with (
+                mock.patch.object(cmd_business, "_list_edge", return_value=[]),
+                mock.patch.object(metaops.graph, "post", return_value={"id": "555"}) as post,
+            ):
                 code, payload = cmd_business._pixel_create(metaops, args)
             self.assertEqual(code, 0)
             path, body = post.call_args.args[0], post.call_args.args[1]

@@ -14,10 +14,20 @@ make system users / change BM settings / assign some assets. Know your level
 
 - Bans are routine: disabled → report → replacement → continue. A large share of
   fresh stock can be DOA (zero impressions from birth) — team/stock-specific prior,
-  not a fixed rate; replace, don't "fix." Document every ban (account ID, date,
-  spend at death); agencies replace against lists.
+  not a fixed rate; replace, don't "fix" — the buyer never appeals alone: ask TL/agency "appeal
+  or replace" (payment/risk bans are worth resolving, `05`); an appeal (where even possible) puts a
+  human reviewer on the BM, the exact scrutiny this doctrine exists to avoid
+  `[unverified mechanism]`. Document every ban (account ID, date, spend at death);
+  agencies replace against lists. Dated prior, one supplier pack, this team
+  (2026-09-21): 5 of 5 autoregs died — two at first login, three after card bind;
+  not a general mortality rate, a signal on that pack/supplier.
+- 🔺 Reading a supplier's autoreg dump: blank and footer lines mean **a persona's row number is
+  not its file line number** — address by parsed record, never by raw line, or you pour the
+  wrong identity into a profile. Records also ship with fields legitimately empty (e.g. no
+  profile URL, so no FB id for that persona); that is supplier data, not a parse bug, and the
+  profile still works off email + password + cookies + 2FA (field-observed 2026-09-22).
 
-**Cross-account creative discipline (SKILL #6 mechanics):** never duplicate the
+**Cross-account creative discipline (SKILL #7 mechanics):** never duplicate the
 same campaign+creative across accounts — both hit the same users (two accounts
 share one auction pool), audience freshness dies, auction overheats on your own TA
 → no leads + spam/reject flags. Per account: own creative + separated audiences
@@ -40,6 +50,21 @@ assignment, no rebuild (toggle off/on only if delivery hasn't resumed within an
 hour). Same for pages (creative fails without page access) and catalogs. Launch
 errors on an asset → check shares first.
 
+For the pixel↔account edge specifically, `12`/`13` already document the API path —
+check there before clicking through Settings: `POST /{pixel_id}/shared_accounts`
+with `account_id=<id WITHOUT the act_ prefix>` and `business=<bm_id>` →
+`{"success": true}`, no manual "Connected assets" click needed (field-verified
+2026-09-21).
+
+**Portfolio cleanup via API** (field-verified 2026-09-27, System User token):
+- Stuck "Request Sent" ad accounts the UI won't cancel: `DELETE /{bm_id}/ad_accounts`
+  `adaccount_id=act_<id>` → `{"success":true}`, gone from `pending_client_ad_accounts` on
+  read-back. `pending_client_ad_accounts` has no DELETE; `DELETE /{bm_id}/client_ad_accounts` → #100/33.
+- Empty partner BMs: `DELETE /{bm_id}/clients business=<partner_bm_id>` is the call, but a
+  partner BM flagged for policy returns **#10 / 2446325** ("business account didn't comply with
+  Advertising Policies") — the same block the UI shows. Not a token/scope problem, no workaround;
+  an empty partner has zero access, leave it. `DELETE /{bm_id}/agencies` is deprecated.
+
 ## BM-level bans & asset recovery
 
 Distinguish the LEVEL of the hit — recovery differs sharply:
@@ -56,6 +81,34 @@ Distinguish the LEVEL of the hit — recovery differs sharply:
   was NOT the kill factor. Implication: create accounts with separate origins, add
   to a working BM, keep sharing pixel/catalog/FBP — but assume BM-created siblings
   fall together.
+- **Run from the autoreg's own cabinet, or share it into a BM?** Both work; the pixel decides.
+  🔺 [first-party, verified 2026-09-24] `POST /{pixel-id}/shared_accounts` is rejected unless
+  "a business account has access to **both** pixel and ad account" (Sept-2024 change; the docs
+  point at `/{pixel-id}/agencies` or `/{ad_account}/agencies` otherwise, which is the same
+  business relationship by another door). So a cabinet outside the BM **cannot** use a
+  BM-owned pixel. It can create and use its own — a Page, by contrast, shares to an outside
+  advertiser fine, so the Page is never what forces the decision.
+  Consequence for a server-side-tracked funnel: every extra pixel is a new dataset, a new CAPI
+  token, and an edit to the tracker link that carries `pixel_fb`/`token_fb`. At an autoreg
+  lifespan of 1-5 days that means rebuilding tracking every couple of days. Sharing the
+  cabinet into the BM exists to avoid exactly that, not to make the account survive longer.
+  The RU-practitioner default is the lighter variant — **king added as admin on the autoreg's
+  own cabinet**, cabinet never entering a BM — which keeps accounts isolated but accepts the
+  per-account pixel. Stated ceiling 2-9 linked cabinets per king, and >3 is itself named as a
+  restriction trigger.
+  Unverified, and it gates the whole direct route: whether a bare autoreg with no business can
+  create a web pixel at all, given the Pixel-Terms-of-Service gate (code 10 / 1784018) is
+  business-scoped. Check this before planning around the direct route.
+- **Assigning a human admin to that autoreg-owned account**: must be assigned to
+  the ad account itself, inside the BM — BM membership alone grants nothing (same
+  per-asset rule as `02` §1 step 2: "Per-asset — portfolio membership assigns
+  nothing"). Do it via Ad account settings → Ad account roles in the UI; the deep
+  link `/ads/manage/account_settings/account_roles/` does NOT work (field-observed
+  2026-09-21).
+- A card-verification/3DS challenge on one of these accounts is unsurvivable: no
+  seller-linked profile sits behind an autoreg with access to the card vendor's own
+  statement to read the code from (unlike the bought-account flow below, where that
+  profile exists) — the attempt burns the card AND the account, not a retry.
 - **Lead-base uploads need a BM-owned account**: personal/legacy accounts can't
   host big uploaded custom-audience databases — keep 1-2 spare BM accounts per
   setup purely as the audience-holding core (exclusions/lookalike seeds), spend
@@ -75,7 +128,7 @@ violation):
 - Agency tenants can rarely appeal a BM ban or move assets themselves → request a
   fresh setup (new BM + accounts + re-shared page/pixel), give the agency the dead
   BM ID + asset IDs.
-- Freeze during an active BM review (SKILL #3): repeated appeals/edits mid-
+- Freeze during an active BM review (SKILL #4): repeated appeals/edits mid-
   restriction are widely held to extend it — field prior, not documented.
 
 ## Ban detection loop
@@ -104,7 +157,8 @@ kill/watch/scale watchlist in `senior-buyer-ops/01`.
 
 - A "dead" account may just be an UNPAID BALANCE, not a ban: failed payment pauses
   delivery and restricts the account. On crypto-topup setups, confirm the balance
-  before requesting a replacement.
+  before requesting a replacement. FIELD 2026-09-27: `account_status` 3 ("Payment needed")
+  recovered by itself once the card charged; `balance` = unbilled amount in cents, not prepaid.
 - Account Spending Limit (ASL) is a LIFETIME cap across the account that pauses
   EVERY ad when hit — silent full-stop, distinct from ad-set budget and billing
   threshold, easy to forget.
@@ -128,9 +182,9 @@ ask the seller): `Total Spend` > 0 and material (examples cited: $624 / $1.2k / 
 were reported to die at a higher rate than spent ones even inside the same batch — spend
 history, not age alone, is the claimed survival factor. Cross-check against the farmed-account
 tells in `01` (ADS_TRUST_TIER, Off-Facebook activity, feed ads) and still judge after
-$30-50 of your own spend (SKILL #5).
+$30-50 of your own spend (SKILL #6).
 
-Timezone/currency are **60-day locked** (`08`) and pre-set by the seller — they are a
+Timezone/currency are **fixed per account** (change = new act id; currency once/60 days, `08`) and pre-set by the seller — they are a
 selection criterion, not something to fix later. Buying a spread of timezones is deliberate:
 it staggers geo-day rollover and start windows across the portfolio.
 
@@ -195,9 +249,42 @@ creative name. Gives exact per-account tracker CPL, readable Ads Manager,
 unambiguous kills. Rename legacy campaigns before scaling — renames are safe,
 don't reset learning.
 
+## Supply quality: what to demand, and what a burned batch looks like
+
+Practitioner consensus, numerically incoherent (30% / 50% / 70% / 99% all appear; no source
+defines its denominator) but directionally consistent:
+
+- **30-50% loss across a cheap autoreg batch's whole lifecycle** — dead on arrival, plus first
+  login, plus first campaign — is unremarkable cost of goods. Autoreg lifespan 1-5 days is the
+  only figure two independent sources agree on. A high loss rate is therefore NOT by itself
+  evidence of a bad pack, and saying so to a TL will not survive contact with them.
+- 🔺 The signal is the **shape, not the rate**. Death concentrated *before* first login, or
+  several ad accounts dying identically at $0 with zero impressions on the same day, is the
+  signature of a registration batch caught as a group — shared registration IP pool or
+  fingerprint template. Scattered failures across different modes and days are ordinary
+  attrition. Judge a supplier on clustering.
+- **Pre-login replacement is a market standard**: 2h to 72h, 24h most commonly quoted, and it
+  voids the moment a login *succeeds*. So dead-on-first-login units are the clean, defensible
+  claim; anything after login is negotiated case by case. Claim inside the window or lose it.
+- "30-day" or "lifetime" warranty claims are a red flag, not a benefit.
+- Test **3-5 accounts** from a pack before accepting the whole batch — the cheapest way to
+  catch a burned batch before committing to it.
+
 ## Replacement pipeline
 
 - Hold unused accounts in reserve; don't launch on all at once.
+- Each account attempt burns one autoreg and draws on a card. Whether it also burns a proxy is
+  the contested question in `01`.
+  🔺 **Accounts per card is unsettled, and so is the failure mode.** One practitioner says ~10,
+  after which the card silently stops binding — no ban, nothing to chase (2026-09-22). External
+  sources converge on **1-5**, and describe the opposite mechanism: the card is blacklisted and
+  the flag cascades to every account it ever touched, with a card previously used on a banned
+  account called near-100% block risk (two independent sources). Nobody tested either. Size the
+  reserve on 1-5 unless the operator's own data says otherwise, since that is the assumption
+  that fails safe.
+  Separately, single-source but mechanistically plausible: adding or removing cards more than
+  ~3 times in a short window can lock an account on stolen-card suspicion — churning cards is
+  itself a signal, independent of reuse.
 - Verdict (with TL): trash after ~$50 with CPL over target, or zero delivery in
   2-3 days, or any disable. Report in batches.
 - On new accounts: check asset shares (pixel!), timezone, currency BEFORE building.

@@ -17,12 +17,16 @@ the same contract as every other `metaops` command.
 
 Command surface:
 
-    edit status  --ids a,b | --state PATH --level campaign|adset|ad | --all --level L
-                 --status PAUSED|ACTIVE --confirm PAUSE|SPEND [--dry-run]
-    edit budget  --ids a,b (--budget-minor N | --budget-pct +-N) [--force-step]
-                 [--confirm SPEND] [--dry-run]
-    edit rename  --ids a,b --prefix P [--suffix S] [--dry-run]
-    edit ramp    --ids a,b --step 20 --confirm RAMP [--dry-run]
+    edit status    --ids a,b | --state PATH --level campaign|adset|ad | --all --level L
+                   --status PAUSED|ACTIVE --confirm PAUSE|SPEND [--dry-run]
+    edit budget    --ids a,b (--budget-minor N | --budget-pct +-N) [--force-step]
+                   [--confirm SPEND] [--dry-run]
+    edit rename    --ids a,b --prefix P [--suffix S] [--dry-run]
+    edit ramp      --ids a,b --step 20 --confirm RAMP [--dry-run]
+    edit targeting --ids a,b | --state PATH | --all --user-os iOS,Android
+                   --confirm TARGETING [--dry-run]
+    edit tags      --ids a,b | --state PATH | --all (--url-tags STR | --template-url URL)
+                   --confirm TAGS [--dry-run]
 
     clone campaign|adset|ad ID [--times N] [--prefix P] [--suffix S] [--start ISO]
           [--into-campaign ID] [--into-adset ID] [--dry-run]
@@ -47,6 +51,9 @@ literal `--confirm SPEND`; PAUSED status changes require `--confirm PAUSE`.
 guarded budget raise per invocation. `rules ... --mode pause` requires `--confirm RULES` since an armed
 pause rule can act unattended; `rules execute` requires `--confirm EXECUTE`; and
 `rules delete` requires `--confirm DELETE`.
+`edit targeting` requires the literal `--confirm TARGETING`, checked even under
+`--dry-run` (matches every other confirm-gated edit above); `edit tags` requires the
+literal `--confirm TAGS`, same rule.
 
 API facts below were verified against the installed facebook_business SDK, not
 against developers.facebook.com (verified 2026-09-03, SDK 26.0.1):
@@ -64,16 +71,29 @@ against developers.facebook.com (verified 2026-09-03, SDK 26.0.1):
     exist (rules.py posts to `{account}/adrules_library` and reads
     `{account}/adrules_history`, matching these edges).
   · `AdRule.create_execute` exists (rules.py posts `{rule_id}/execute`).
+  · `Targeting.Field.user_os` exists, typed `list<string>` in `AdSet.api_update`
+    param_types, which also carries `targeting: Targeting` — confirming the ad-set
+    whole-object POST target `edit_targeting.py` writes to (never a delta).
+  · `AdCreative.api_update` param_types = `{account_id, adlabels, name, status}` —
+    `url_tags`/`template_url_spec` are CREATE-only (present only in
+    `AdAccount.create_ad_creative`'s param_types, alongside `object_story_spec`,
+    `asset_feed_spec`, `product_set_id`, `degrees_of_freedom_spec`,
+    `contextual_multi_ads`). `Ad.api_update` param_types include `creative: AdCreative`.
+    Together these confirm `edit_tags.py`'s clone-a-new-creative-then-swap path is the
+    only way to change a live ad's tags; there is no in-place PATCH.
 
-edit.py, clone.py, and rules.py each now print exactly one JSON line as the last
-line of stdout (schemas `edit.result/v1`, `clone.result/v1`, `rules.result/v1`);
-this module parses that line and returns it under `data`.
+edit.py, clone.py, rules.py, edit_targeting.py, and edit_tags.py each print exactly one
+JSON line as the last line of stdout (schemas `edit.result/v1`, `clone.result/v1`,
+`rules.result/v1`, `edit_targeting.result/v1`, `edit_tags.result/v1`); this module
+parses that line and returns it under `data`.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import pathlib
 from typing import Any
 
 RAISE_CONFIRM = "SPEND"
@@ -83,6 +103,11 @@ RULES_PAUSE_CONFIRM = "RULES"
 RULES_DELETE_CONFIRM = "DELETE"
 RULES_EXECUTE_CONFIRM = "EXECUTE"
 RAMP_STEP_LIMIT = 20
+TARGETING_CONFIRM = "TARGETING"
+TAGS_CONFIRM = "TAGS"
+# dest names for `edit targeting`'s scalar flags. Add a matching add_argument() in
+# register() and an entry in edit_targeting.py's SCALAR_FIELDS to support another one.
+TARGETING_SCALAR_FLAGS = ["user_os", "publisher_platforms", "facebook_positions", "instagram_positions"]
 
 
 def _parse_last_json_line(stdout: str) -> dict[str, Any]:
@@ -144,7 +169,8 @@ def handle_edit_status(args) -> tuple[int, dict[str, Any]]:
         raise ctx.MetaOpsError("edit status needs exactly one of --ids, --state, --all")
     if (args.state or args.all) and not args.level:
         raise ctx.MetaOpsError("--state / --all need --level")
-    expected_confirm = RAISE_CONFIRM if args.status == "ACTIVE" else PAUSE_CONFIRM
+    expected_confirm = {"ACTIVE": RAISE_CONFIRM, "PAUSED": PAUSE_CONFIRM,
+                        "DELETED": "DELETE"}[args.status]
     if args.confirm != expected_confirm:
         raise ctx.MetaOpsError(
             f"--status {args.status} changes delivery: pass the literal --confirm {expected_confirm}"
@@ -158,10 +184,7 @@ def handle_edit_status(args) -> tuple[int, dict[str, Any]]:
     else:
         child_args += ["--account", account, "--level", args.level, "--all"]
     child_args += ["--status", args.status]
-    if args.status == "ACTIVE":
-        child_args += ["--confirm", "ACTIVATE"]
-    else:
-        child_args += ["--confirm", "PAUSE"]
+    child_args += ["--confirm", {"ACTIVE": "ACTIVATE", "PAUSED": "PAUSE", "DELETED": "DELETE"}[args.status]]
     child_args += ["--expected-account", account]
     if args.dry_run:
         child_args.append("--dry-run")
@@ -241,7 +264,90 @@ def handle_edit_ramp(args) -> tuple[int, dict[str, Any]]:
     )
 
 
+def handle_edit_targeting(args) -> tuple[int, dict[str, Any]]:
+    ctx = ctx_module()
+    _, profile = _profile(args, ctx)
+    account = _account(profile, ctx)
+    if bool(args.ids) + bool(args.state) + bool(args.all) != 1:
+        raise ctx.MetaOpsError("edit targeting needs exactly one of --ids, --state, --all")
+    provided = {name: getattr(args, name) for name in TARGETING_SCALAR_FLAGS if getattr(args, name)}
+    if not provided:
+        raise ctx.MetaOpsError(
+            "edit targeting needs at least one scalar targeting flag (currently: --user-os)"
+        )
+    if args.confirm != TARGETING_CONFIRM:
+        raise ctx.MetaOpsError(
+            f"targeting changes reach: pass the literal --confirm {TARGETING_CONFIRM}"
+        )
+    child_args: list[str] = []
+    if args.ids:
+        child_args += ["--ids", args.ids]
+    elif args.state:
+        _check_state_account(args.state, account, ctx)
+        child_args += ["--state", args.state]
+    else:
+        child_args += ["--account", account, "--all"]
+    for name, value in provided.items():
+        child_args += [f"--{name.replace('_', '-')}", value]
+    child_args += ["--confirm", TARGETING_CONFIRM, "--expected-account", account]
+    if args.dry_run:
+        child_args.append("--dry-run")
+    return _run_child(ctx, args, "edit targeting", "edit_targeting.py", child_args, "edited")
+
+
+def handle_edit_tags(args) -> tuple[int, dict[str, Any]]:
+    ctx = ctx_module()
+    _, profile = _profile(args, ctx)
+    account = _account(profile, ctx)
+    if bool(args.ids) + bool(args.state) + bool(args.all) != 1:
+        raise ctx.MetaOpsError("edit tags needs exactly one of --ids, --state, --all")
+    if not args.url_tags and not args.template_url:
+        raise ctx.MetaOpsError("edit tags needs --url-tags and/or --template-url")
+    if args.confirm != TAGS_CONFIRM:
+        raise ctx.MetaOpsError(
+            f"rewriting live tracking tags requires the literal --confirm {TAGS_CONFIRM}"
+        )
+    child_args: list[str] = []
+    if args.ids:
+        child_args += ["--ids", args.ids]
+    elif args.state:
+        _check_state_account(args.state, account, ctx)
+        child_args += ["--state", args.state]
+    else:
+        child_args += ["--account", account, "--all"]
+    if args.url_tags:
+        child_args += ["--url-tags", args.url_tags]
+    if args.template_url:
+        child_args += ["--template-url", args.template_url]
+    child_args += ["--confirm", TAGS_CONFIRM, "--expected-account", account]
+    if args.dry_run:
+        child_args.append("--dry-run")
+    return _run_child(
+        ctx, args, "edit tags", "edit_tags.py", child_args, "edited",
+        next_action=(
+            "Name macros ({{campaign.name}}, {{adset.name}}, {{ad.name}}) resolve from a "
+            "first-publish snapshot (04-mass-launch-api.md), so renaming an object never reaches "
+            "the tracker; id macros are unaffected. Skipped ads were not cloned - see each row's "
+            "reason."
+        ),
+    )
+
+
 # --- clone -------------------------------------------------------------------
+
+
+def default_clone_state(ctx, args, account: str) -> str:
+    """Resume file keyed by the full clone request. Re-running the identical request resumes
+    (completed copies are skipped, unknown outcomes stop) instead of duplicating; any change
+    to kind/id/times/naming/start/target is a new request with its own file. Pass --state
+    explicitly to force a fresh set of copies."""
+    request = {
+        "account": account, "kind": args.kind, "id": str(args.id), "times": args.times,
+        "prefix": args.prefix, "suffix": args.suffix, "start": args.start,
+        "into_campaign": args.into_campaign, "into_adset": args.into_adset,
+    }
+    sha = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()[:12]
+    return str(pathlib.Path(ctx.launch.STATE_DIR) / "clones" / f"{args.kind}-{args.id}.{sha}.json")
 
 
 def handle_clone(args) -> tuple[int, dict[str, Any]]:
@@ -261,6 +367,8 @@ def handle_clone(args) -> tuple[int, dict[str, Any]]:
         child_args += ["--into-adset", args.into_adset]
     if args.dry_run:
         child_args.append("--dry-run")
+    else:
+        child_args += ["--state", args.state or default_clone_state(ctx, args, account)]
     return _run_child(
         ctx, args, "clone", "clone.py", child_args, "cloned",
         next_action="Copies land PAUSED; review in Ads Manager, then edit status --confirm SPEND to activate.",
@@ -359,7 +467,8 @@ def register(sub: argparse._SubParsersAction, ctx) -> None:
     grp.add_argument("--state", help="launch.py state file; needs --level")
     grp.add_argument("--all", action="store_true", help="every ACTIVE object at --level in the profile account")
     p.add_argument("--level", choices=["campaign", "adset", "ad"], help="needed with --state / --all")
-    p.add_argument("--status", required=True, choices=["ACTIVE", "PAUSED"])
+    p.add_argument("--status", required=True, choices=["ACTIVE", "PAUSED", "DELETED"],
+                   help="DELETED is irreversible (--confirm DELETE); allowed with spend (Meta keeps its insights)")
     p.add_argument("--confirm", help=f"literal {RAISE_CONFIRM} for ACTIVE or {PAUSE_CONFIRM} for PAUSED")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(handler=handle_edit_status)
@@ -388,6 +497,34 @@ def register(sub: argparse._SubParsersAction, ctx) -> None:
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(handler=handle_edit_ramp)
 
+    p = edit_sub.add_parser(
+        "targeting", help="read-modify-write a narrow targeting change across many adsets"
+    )
+    grp = p.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--ids", help="comma-separated ad set ids")
+    grp.add_argument("--state", help="launch.py state file; adset ids are pulled from it")
+    grp.add_argument("--all", action="store_true", help="every ACTIVE ad set in the profile account")
+    p.add_argument("--user-os", dest="user_os", help="comma-separated OS list, e.g. iOS,Android")
+    p.add_argument("--publisher-platforms", dest="publisher_platforms", help="e.g. facebook,instagram (must include instagram)")
+    p.add_argument("--facebook-positions", dest="facebook_positions", help="e.g. feed,story,facebook_reels")
+    p.add_argument("--instagram-positions", dest="instagram_positions", help="e.g. stream,story,reels")
+    p.add_argument("--confirm", help=f"literal {TARGETING_CONFIRM}, required (including --dry-run)")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(handler=handle_edit_targeting)
+
+    p = edit_sub.add_parser(
+        "tags", help="bulk-rewrite url_tags/template_url_spec on live ads (clone-and-swap creative)"
+    )
+    grp = p.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--ids", help="comma-separated ad ids")
+    grp.add_argument("--state", help="launch.py state file; ad ids are pulled from it")
+    grp.add_argument("--all", action="store_true", help="every ACTIVE ad in the profile account")
+    p.add_argument("--url-tags", help="new url_tags string for non-catalog creatives")
+    p.add_argument("--template-url", help="new template_url_spec.web.url for catalog/product-ad creatives")
+    p.add_argument("--confirm", help=f"literal {TAGS_CONFIRM}, required (including --dry-run)")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(handler=handle_edit_tags)
+
     # clone ----------------------------------------------------------------
     p_clone = sub.add_parser("clone", help="duplicate a campaign/adset/ad inside the account (PAUSED)")
     p_clone.add_argument("kind", choices=["campaign", "adset", "ad"])
@@ -399,6 +536,8 @@ def register(sub: argparse._SubParsersAction, ctx) -> None:
     p_clone.add_argument("--into-campaign", help="adset copies: target campaign id")
     p_clone.add_argument("--into-adset", help="ad copies: target ad set id")
     p_clone.add_argument("--dry-run", action="store_true")
+    p_clone.add_argument("--state", help="clone resume file; default is keyed by the request "
+                         "under the workspace state dir, so an identical re-run never duplicates")
     p_clone.set_defaults(handler=handle_clone)
 
     # rules ------------------------------------------------------------------

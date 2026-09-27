@@ -33,11 +33,46 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 
 import graph
 
 UNCOPYABLE_STATUSES = {"ARCHIVED", "DELETED"}
+
+
+def load_clone_state(path: str | None) -> dict:
+    """Resume log for /copies: {completed: {n: out}, in_flight: {n: label}}.
+
+    /copies is NOT retried on transport failure (a copy may have applied), so a
+    break with outcome_unknown leaves the copy's fate unknown. The next run with
+    the same --state must NOT blind-post again — it stops and tells the operator
+    to reconcile in Ads Manager. Without --state the script keeps its legacy
+    behaviour (every id printed to --json, manual reconcile)."""
+    if not path or not os.path.exists(path):
+        return {"completed": {}, "in_flight": {}}
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        return {"completed": {}, "in_flight": {}}
+    data.setdefault("completed", {})
+    data.setdefault("in_flight", {})
+    return data
+
+
+def save_clone_state(path: str, data: dict) -> None:
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".clone-state.", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(graph.redact(json.dumps(data, indent=2)))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def rename_options(args, n: int) -> dict:
@@ -106,6 +141,16 @@ def require_expected_account(obj_id: str, expected_account: str | None) -> None:
         raise SystemExit(f"{obj_id} is {sorted(statuses & UNCOPYABLE_STATUSES)[0]}; refusing to copy it")
 
 
+def created_ids(out: dict) -> list[str]:
+    """Every real id recorded for one copy (campaign/adset/ad, scalar or list)."""
+    ids: list[str] = []
+    for value in out.values():
+        for item in value if isinstance(value, list) else [value]:
+            if item:
+                ids.append(str(item))
+    return ids
+
+
 def copy_campaign_tree(cid: str, args, n: int, out: dict) -> None:
     new_c = copy_obj(cid, {"rename_options": rename_options(args, n)}, args.dry_run, "campaign")
     out["campaign"] = new_c
@@ -141,6 +186,8 @@ def main() -> int:
     ap.add_argument("--expected-account", help="internal metaops profile binding for opaque object ids")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", help="write all new ids here")
+    ap.add_argument("--state", help="resume file: retrying with the same path never re-posts "
+                    "a copy whose outcome is unknown (no duplicates after a transport break)")
     args = ap.parse_args()
 
     require_expected_account(args.id, args.expected_account)
@@ -154,8 +201,26 @@ def main() -> int:
 
     results = []
     failed = False
+    clone_state = load_clone_state(getattr(args, "state", None))
     for n in range(1, args.times + 1):
+        key = str(n)
+        if not args.dry_run and key in clone_state.get("completed", {}):
+            out = clone_state["completed"][key]
+            print(f"  = copy {n} already completed — skipping (resume from --state, no duplicate)")
+            results.append(out)
+            continue
+        if not args.dry_run and key in clone_state.get("in_flight", {}):
+            print(f"  x copy {n} was attempted and its outcome is unknown "
+                  f"(state {args.state}). An object may exist in the account. Reconcile in "
+                  f"Ads Manager, then clear in_flight.{key} or reuse the recorded id — "
+                  f"refusing to blind-retry /copies.", file=sys.stderr)
+            results.append({})
+            failed = True
+            break
         out: dict = {}
+        if not args.dry_run and getattr(args, "state", None):
+            clone_state.setdefault("in_flight", {})[key] = f"{args.kind}:{args.id}"
+            save_clone_state(args.state, clone_state)
         try:
             if args.kind == "campaign":
                 copy_campaign_tree(args.id, args, n, out)
@@ -185,13 +250,43 @@ def main() -> int:
             if e.code == 1 or e.subcode == 99:
                 print("    code 1 / sub 99 here has meant: source still IN_PROCESS (just created) — "
                       "wait a minute and retry", file=sys.stderr)
+            if e.outcome_unknown and getattr(args, "state", None):
+                print(f"    outcome unknown — copy {n} may have applied; kept in "
+                      f"in_flight.{key}, will not blind-retry", file=sys.stderr)
+            elif getattr(args, "state", None) and not args.dry_run and not created_ids(out):
+                # Known rejection and no sub-copy of this tree exists: nothing to reconcile,
+                # so clear the marker and let the next run retry this copy cleanly.
+                clone_state.get("in_flight", {}).pop(key, None)
+                save_clone_state(args.state, clone_state)
+                print(f"    nothing was created for copy {n}; in_flight.{key} cleared, safe "
+                      f"to re-run", file=sys.stderr)
+            elif getattr(args, "state", None):
+                # Known rejection: nothing was created by THIS call, but earlier
+                # sub-copies in this tree exist — keep the marker so the retry
+                # reconciles instead of duplicating the parents.
+                print(f"    kept in in_flight.{key}: earlier sub-copies exist "
+                      f"({created_ids(out)}); reconcile before retrying", file=sys.stderr)
             results.append(out)
             failed = True
             break
+        if not args.dry_run and getattr(args, "state", None):
+            clone_state.get("in_flight", {}).pop(key, None)
+            clone_state.setdefault("completed", {})[key] = out
+            save_clone_state(args.state, clone_state)
         results.append(out)
     if args.json:
-        with open(args.json, "w", encoding="utf-8") as fh:
-            fh.write(graph.redact(json.dumps(results, indent=2)))
+        # Atomic + 0o600 like the resume state: a crash must not leave half a result.
+        parent = os.path.dirname(args.json) or "."
+        os.makedirs(parent, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".clone-json.", dir=parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(graph.redact(json.dumps(results, indent=2)))
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, args.json)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
     if not args.dry_run:
         print("\nAll copies PAUSED. Copies have no spec, so activate.py (which needs a spec'd verify "
               "receipt) does not apply: check them in Ads Manager, then run metaops edit status "

@@ -55,6 +55,10 @@ Common mistakes: Sales for cold zero-pixel audiences starves learning — but co
 | **Ads per ad set** | 150 total (ASC) | **Max 50/ad set** (Meta discourages >~6 active); old total cap gone [uncertain: total-campaign cap — Birch 2026 cites "150 total, 50/set"] |
 | API | — | 2025-09-21: unified API structure for Advantage+ across sales/app/leads |
 
+**2026 follow-on:** by **February 2026** Meta merged the remaining separate "Manual" vs. "Advantage+ Sales" creation entry points into one unified campaign-creation flow for Sales/Leads/App promotion — there's no longer an upfront automated-vs-manual choice screen at all; every new campaign starts in the Advantage+ setup with per-element opt-outs, matching §2.1's "Creation prompt: Removed" row above but now dated. [practitioner consensus across 3+ independent sources — hawky.ai, testedstack.vercel.app, firstlaunch.in, all 2026 — no primary Meta newsroom/changelog page located for this specific merge date; treat the month as directional, verify live]
+
+**Legacy Advantage+ Shopping/App Marketing API paths are being sunset on a hard schedule**: Marketing API **v24.0** (released 2025-10-08) blocked *creating* new Advantage+ Shopping Campaign (ASC) / Advantage+ App Campaign (AAC) objects via the legacy fields on new-version calls (v23.0 and earlier still worked). **v25.0** extended the block to duplication/updates. Since **2026-05-19** the restriction is version-independent — ASC/AAC creation, duplication and updates are blocked **on every Marketing API version, including old ones**. Exact quoted text: "Creation, duplication, and updates to Advantage+ shopping campaigns and Advantage+ app campaigns is no longer allowed." [official: developers.facebook.com/documentation/ads-commerce/marketing-api/marketing-api-changelog/version25.0, confirmed live 2026-09-24; affected endpoints `POST /{ad-account-id}/campaigns` and `POST /{campaign-id}/copies`] Any tool still building campaigns on the pre-2025 ASC/AAC API shape already fails; migrate to the unified Advantage+ campaign structure.
+
 ### 2.2 Pros/cons
 
 Advantage+ pros: less setup; best with ~50+/week conversion volume, 5–10+ creative variants, clean Pixel+CAPI; budget flows to what works in real time (with Advantage campaign budget on). Meta reports Advantage+ Shopping/Sales surpassed **$20B annual revenue run rate, ~70% YoY** [Meta Q3 2024 earnings — where Meta invests, not an independent result].
@@ -141,6 +145,7 @@ Evaluate campaign allocation and ad-set diagnostics together — neither alone s
 14–16. adamigo.ai / adlibrary.com / dataally.ai — naming-convention guides (practitioner, 2026).
 17–22, 25, 30. well-oiledmarketing.com, about.fb.com (official SAA sunset), wordjack.com, faraday.ai, lafactory.online, adamigo.ai, geear.io, digitaltwentyfour.com — Special Ad Category mechanics.
 23–24. ppc.land — TTPA EU political-ads block (Oct 2025), unified Advantage+ API (Sep 2025) (trade press).
+31. §2.1 2026 additions (added 2026-09-24): developers.facebook.com/documentation/ads-commerce/marketing-api/marketing-api-changelog/version25.0 (official, legacy ASC/AAC API sunset — confirmed live); hawky.ai / testedstack.vercel.app / firstlaunch.in (practitioner, Feb 2026 manual+Advantage+ flow merge — no primary source found for this specific date).
 26. github.com/pipeboard-co/meta-ads-mcp — legacy→ODAX constant mapping.
 27–29. getkoro.app, lobehub.com, blackpropeller.com — objective strategy, unverified Advantage+/CAPI claims flagged.
 
@@ -154,3 +159,4 @@ Evaluate campaign allocation and ad-set diagnostics together — neither alone s
 - "Instagram profile" conversion location under Traffic for follower growth appears rollout/account-dependent.
 - Per-objective optimization-goal counts are practitioner-compiled; Meta publishes no canonical list.
 - CPL $23.10 / CPM $13.48 / CTR 2.19% / CPC benchmarks are 2026 third-party panels with differing composition — directional only.
+- The Feb 2026 manual+Advantage+ creation-flow merge (§2.1) rests on 3 independent practitioner blogs, not a Meta newsroom/changelog page — the legacy-API sunset date (v25.0, full block 2026-05-19) is separately confirmed against Meta's own changelog and is solid.

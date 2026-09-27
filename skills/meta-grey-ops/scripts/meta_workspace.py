@@ -25,7 +25,9 @@ PROFILE_KEYS = {
     "product_sets",
     "currency",
     "timezone",
+    "token_kind",
 }
+TOKEN_KINDS = {"system_user", "user", "auto"}
 ID_KEYS = {
     "business_id",
     "app_id",
@@ -163,8 +165,15 @@ def validate_workspace(data: Any) -> None:
         unknown = sorted(set(profile) - PROFILE_KEYS)
         if unknown:
             raise WorkspaceError(f"profiles.{name} has unsupported keys: {unknown}")
+        # app_id/system_user_id are OPTIONAL: a System User token needs both to run its
+        # provisioning-authority and BM-ownership checks; a plain user token (own BM admin,
+        # third-party developer app, or a scraped browser session, `02`) has neither and
+        # still launches — asset_graph.py resolves the acting token_kind and downgrades the
+        # app/System-User BM-ownership checks to warnings when it is not a System User.
+        # `doctor --scope provisioning` and any Business-Portfolio provisioning command still
+        # hard-require system_user_id (metaops.require_provisioning_admin).
         required = {
-            "business_id", "app_id", "system_user_id", "ad_account_id", "page_id",
+            "business_id", "ad_account_id", "page_id",
             "dataset_id", "currency", "timezone",
         }
         missing = sorted(key for key in required if not profile.get(key))
@@ -200,6 +209,10 @@ def validate_workspace(data: Any) -> None:
             if not isinstance(set_id, str):
                 raise WorkspaceError(f"profiles.{name}.product_sets.{alias} must be a string")
             _numeric_id(set_id, f"profiles.{name}.product_sets.{alias}")
+        if "token_kind" in profile and profile["token_kind"] not in TOKEN_KINDS:
+            raise WorkspaceError(
+                f"profiles.{name}.token_kind must be one of {sorted(TOKEN_KINDS)}"
+            )
         currency = profile.get("currency")
         if not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency):
             raise WorkspaceError(f"profiles.{name}.currency must be an ISO 4217 code")

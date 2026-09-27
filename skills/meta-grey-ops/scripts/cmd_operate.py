@@ -300,7 +300,8 @@ def command_monitor(args, ctx) -> tuple[int, dict[str, Any]]:
     telegram: dict[str, Any] | None = None
     if args.telegram:
         telegram = {"sent": 0, "errors": []}
-        session = ctx.graph.session()
+        # Plain session: same proxy, but the Facebook cookies stay off api.telegram.org.
+        session = ctx.graph.plain_session()
         for row in attention:
             url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
             payload = {
@@ -311,9 +312,12 @@ def command_monitor(args, ctx) -> tuple[int, dict[str, Any]]:
                 resp = session.post(url, json=payload, timeout=30)
                 body = resp.json()
             except Exception as exc:  # noqa: BLE001 - network/transport, redact and record
+                # TG token is masked by the central graph.redact (TG_BOT_TOKEN env +
+                # registered secrets) — no ad-hoc replace here so new secret kinds
+                # cannot leak through this path.
                 telegram["errors"].append({
                     "account": row.get("account"),
-                    "error": str(exc).replace(tg_token, "<TG_TOKEN>"),
+                    "error": ctx.graph.redact(str(exc)),
                 })
                 continue
             if body.get("ok"):
@@ -321,7 +325,7 @@ def command_monitor(args, ctx) -> tuple[int, dict[str, Any]]:
             else:
                 telegram["errors"].append({
                     "account": row.get("account"),
-                    "error": str(body.get("description", "")).replace(tg_token, "<TG_TOKEN>"),
+                    "error": ctx.graph.redact(str(body.get("description", ""))),
                 })
 
     ok = not attention
@@ -420,8 +424,15 @@ def command_page(args, ctx) -> tuple[int, dict[str, Any]]:
     # mode == "set"
     if args.confirm != "PAGE":
         raise ctx.MetaOpsError("page set requires the literal --confirm PAGE")
-    if not any([args.avatar, args.cover, args.about, args.website]):
-        raise ctx.MetaOpsError("page set requires at least one of --avatar/--cover/--about/--website")
+    clear_website = getattr(args, "clear_website", False)
+    remove_cover = getattr(args, "remove_cover", False)
+    if not any([args.avatar, args.cover, args.about, args.website, clear_website, remove_cover]):
+        raise ctx.MetaOpsError("page set requires at least one of --avatar/--cover/--about/--website/"
+                               "--clear-website/--remove-cover")
+    if args.website and clear_website:
+        raise ctx.MetaOpsError("--website and --clear-website are exclusive")
+    if args.cover and remove_cover:
+        raise ctx.MetaOpsError("--cover and --remove-cover are exclusive")
     child_args = [page_id]
     if args.avatar:
         child_args += ["--avatar", str(ctx.resolve_input(args.avatar))]
@@ -431,6 +442,10 @@ def command_page(args, ctx) -> tuple[int, dict[str, Any]]:
         child_args += ["--about", args.about]
     if args.website:
         child_args += ["--website", args.website]
+    if clear_website:
+        child_args.append("--clear-website")
+    if remove_cover:
+        child_args.append("--remove-cover")
     child = ctx.run_child("page.py", child_args, args.timeout)
     ctx.echo_child(child)
     if not child.ok:
@@ -820,6 +835,8 @@ def register(sub, ctx) -> None:
     setp.add_argument("--cover", help="image file")
     setp.add_argument("--about")
     setp.add_argument("--website")
+    setp.add_argument("--clear-website", action="store_true", help="remove the page website")
+    setp.add_argument("--remove-cover", action="store_true", help="delete the current cover photo")
     setp.add_argument("--confirm", help="must be literal PAGE")
     setp.set_defaults(handler=lambda args: command_page(args, ctx), page_mode="set")
 

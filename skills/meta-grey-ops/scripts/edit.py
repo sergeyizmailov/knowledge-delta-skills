@@ -42,11 +42,22 @@ def ids_from_state(path: str, level: str) -> list[str]:
     return [v for k, v in objects.items() if k == prefix or k.startswith(prefix)]
 
 
+# Everything that spends now or will spend without another human action: a fresh launch
+# sits in IN_PROCESS / PENDING_REVIEW for minutes to hours before it reads ACTIVE, and a
+# child under a paused parent resumes the moment the parent does. `--all` exists for the
+# kill switch, so ACTIVE alone misses exactly the launches it is usually aimed at. Every
+# value is in the effective_status enum of the ad-account campaigns/adsets/ads edges.
+LIVE_EFFECTIVE_STATUSES = [
+    "ACTIVE", "IN_PROCESS", "PENDING_REVIEW", "PREAPPROVED", "WITH_ISSUES",
+    "CAMPAIGN_PAUSED", "ADSET_PAUSED",
+]
+
+
 def ids_from_account(account: str, level: str) -> list[str]:
     edge = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}[level]
     out, path, params = [], f"{account}/{edge}", {
         "fields": "id", "limit": 500,
-        "effective_status": json.dumps(["ACTIVE"])}
+        "effective_status": json.dumps(LIVE_EFFECTIVE_STATUSES)}
     while True:
         resp = graph.get(path, params=params, context=edge)
         out.extend(o["id"] for o in resp.get("data", []))
@@ -73,8 +84,10 @@ def main() -> int:
     src.add_argument("--state", help="launch.py state file")
     src.add_argument("--account", help="act_<id> with --all")
     ap.add_argument("--level", choices=["campaign", "adset", "ad"], help="needed with --state / --account")
-    ap.add_argument("--all", action="store_true", help="with --account: every ACTIVE object at --level")
-    ap.add_argument("--status", choices=["ACTIVE", "PAUSED", "ARCHIVED"])
+    ap.add_argument("--all", action="store_true",
+                    help="with --account: every live object at --level (ACTIVE, in review, "
+                         "WITH_ISSUES, or under a paused parent)")
+    ap.add_argument("--status", choices=["ACTIVE", "PAUSED", "ARCHIVED", "DELETED"])
     ap.add_argument("--budget-minor", type=int, help="new daily_budget, integer minor units")
     ap.add_argument("--budget-pct", help="relative change, e.g. +20 or -15")
     ap.add_argument("--rename-prefix")
@@ -109,14 +122,23 @@ def main() -> int:
                  "for a fresh launch, which also refreshes start_time).")
     if args.status == "PAUSED" and args.confirm != "PAUSE":
         sys.exit("--status PAUSED changes delivery: pass --confirm PAUSE.")
+    if args.status == "DELETED" and args.confirm != "DELETE":
+        sys.exit("--status DELETED is irreversible: pass --confirm DELETE.")
     if args.status == "ARCHIVED" and args.confirm != "ARCHIVE":
         sys.exit("--status ARCHIVED is destructive: pass --confirm ARCHIVE.")
 
     bad = 0
     results: list[dict] = []
     for oid in ids:
-        obj = graph.get(oid, params={"fields": "name,status,daily_budget,lifetime_budget,account_id,effective_status"},
-                        context=f"read {oid}")
+        try:
+            obj = graph.get(oid, params={"fields": "name,status,daily_budget,lifetime_budget,account_id,effective_status"},
+                            context=f"read {oid}")
+        except graph.GraphError as e:
+            # Ads have no budget fields (#100 nonexisting field); re-read without them.
+            if e.code != 100:
+                raise
+            obj = graph.get(oid, params={"fields": "name,status,account_id,effective_status"},
+                            context=f"read {oid}")
         if args.expected_account:
             actual = obj.get("account_id")
             if not actual or graph.normalize_account(actual) != graph.normalize_account(args.expected_account):
@@ -128,6 +150,14 @@ def main() -> int:
                 results.append({"id": oid, "ok": False, "error": "object outside profile account"})
                 continue
         payload: dict = {}
+        if args.status == "DELETED":
+            # Meta keeps insights of deleted objects (account totals, "deleted" filter), so spend
+            # is not a reason to refuse; just report it.
+            ins = graph.get(f"{oid}/insights", params={"fields": "spend", "date_preset": "maximum"},
+                            context=f"spend {oid}").get("data") or []
+            spent = sum(float(r.get("spend") or 0) for r in ins)
+            if spent > 0:
+                print(f"  ! {oid}: deleting object with {spent:.2f} lifetime spend", file=sys.stderr)
         if args.status:
             payload["status"] = args.status
         if args.rename_prefix or args.rename_suffix:
@@ -167,7 +197,8 @@ def main() -> int:
             continue
         try:
             graph.post(oid, payload, context=f"edit {oid}", idempotent=True)
-            back = graph.get(oid, params={"fields": "name,status,daily_budget,effective_status"}, context="readback")
+            back_fields = "name,status,effective_status" if "daily_budget" not in obj else "name,status,daily_budget,effective_status"
+            back = graph.get(oid, params={"fields": back_fields}, context="readback")
             print(f"  ✓ {oid} {back.get('name')}: status={back.get('status')} "
                   f"effective={back.get('effective_status')} daily_budget={back.get('daily_budget')}")
             results.append({

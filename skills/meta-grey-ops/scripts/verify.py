@@ -2,8 +2,10 @@
 """Internal read-back verifier for workspace-bound metaops.
 
 A successful mutation is not proof the object holds what you sent: budgets land in
-minor units, targeting gets replaced wholesale, and enum defaults fill silently. Run
-this before activation. Exit 1 on any mismatch or any non-deliverable effective status.
+minor units, targeting gets replaced wholesale, and enum defaults fill silently. Objects
+are ACTIVE by default (launch.py) — run this right after apply, since spend has already
+started; under a spec's create_status: PAUSED override, run it before activate instead.
+Exit 1 on any mismatch or any non-deliverable effective status.
 """
 
 from __future__ import annotations
@@ -38,10 +40,12 @@ AD_FIELDS = (
 # effective_status values that mean "activating will not fix this".
 BLOCKING = {"DISAPPROVED", "WITH_ISSUES", "DELETED", "ARCHIVED", "ADSET_DELETED",
             "CAMPAIGN_DELETED", "DISABLED"}
-# Expected on a freshly built PAUSED tree — reported, never counted as a failure.
+# Expected on a freshly built tree — reported, never counted as a failure. ACTIVE is the
+# default create_status (launch.py); PAUSED/ADSET_PAUSED/CAMPAIGN_PAUSED cover the
+# create_status: PAUSED override and re-paused objects.
 # IN_PROCESS: Meta's transient state right after create (live 2026-09-02, every level of a
-# fresh PAUSED tree) — clears within minutes; not a defect.
-EXPECTED = {"PAUSED", "ADSET_PAUSED", "CAMPAIGN_PAUSED", "PENDING_REVIEW", "PREAPPROVED", "IN_PROCESS"}
+# fresh tree) — clears within minutes; not a defect.
+EXPECTED = {"ACTIVE", "PAUSED", "ADSET_PAUSED", "CAMPAIGN_PAUSED", "PENDING_REVIEW", "PREAPPROVED", "IN_PROCESS"}
 
 
 def _as_instant(v):
@@ -105,17 +109,29 @@ class Diff:
 
     def status(self, label: str, value) -> None:
         """Report an effective_status. Blocking ones fail the run; anything neither
-        blocking nor expected-on-a-paused-tree is surfaced for a human to look at."""
+        blocking nor expected-on-a-fresh-tree is surfaced for a human to look at."""
         if value in BLOCKING:
             flag, self.bad = "   <-- BLOCKING, activating will not fix it", self.bad + 1
         elif value in EXPECTED:
             flag = ""
         else:
-            flag = "   <-- unexpected on a paused build, check it"
+            flag = "   <-- unexpected on a fresh build, check it"
         print(f"    ..    {label}: {value}{flag}")
 
     def note(self, label: str, value) -> None:
         print(f"    ..    {label}: {value}")
+
+
+def normalize_location_types(geo):
+    """Graph stores location_types ["home", "recent"] as ["frequently_in", "home", "recent"]
+    (field-observed 2026-09-22, v26.0): "living in or recently in" implies "frequently in".
+    Mirror that so a correct build does not read back as MISMATCH."""
+    if not isinstance(geo, dict):
+        return geo
+    types = geo.get("location_types")
+    if isinstance(types, list) and {"home", "recent"} <= set(types) and "frequently_in" not in types:
+        geo = {**geo, "location_types": ["frequently_in", *types]}
+    return geo
 
 
 def _kind_from_creative(story: dict, feed: dict, creative: dict) -> str:
@@ -185,6 +201,56 @@ def check_destination(d: Diff, want_c: dict | None, creative: dict) -> None:
                   "URL from the feed and carry no subids")
 
 
+# Locale GROUP ids that Graph expands into member ids on read-back (04 → DLO): English (All),
+# Spanish (All), and the third group seen live. Diffing raw id sets would flag every group.
+LOCALE_GROUPS = {1001: {6, 24}, 1002: {7, 23}, 1005: {16, 31}}
+
+
+def _expand_locales(ids) -> set[int]:
+    out: set[int] = set()
+    for raw in ids or []:
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            continue
+        out |= LOCALE_GROUPS.get(n, {n})
+    return out
+
+
+def _label_names(asset: dict) -> set[str]:
+    return {str(lab.get("name")) for lab in asset.get("adlabels") or [] if isinstance(lab, dict)}
+
+
+def _text_for_label(assets, label: str):
+    return next((a.get("text") for a in assets or [] if label in _label_names(a)), None)
+
+
+def check_dlo_feed(d: Diff, wc: dict, feed: dict) -> None:
+    """Diff the language rules, not just the body count.
+
+    Per spec locale (matched by label): its rule exists, carries the expected locale ids
+    (groups expanded on both sides; the age_min/age_max Graph injects into
+    customization_spec are ignored), is_default sits on the right label, and the body/title
+    text under that label is what the spec sent. Video ids are re-mapped on GET, so media is
+    never compared by id here."""
+    locales = wc.get("locales") or []
+    rules = feed.get("asset_customization_rules") or []
+    d.check("        dlo rules (count)", len(locales), len(rules))
+    d.check("        dlo rules is_default (count)", 1, sum(1 for r in rules if r.get("is_default")))
+    for loc in locales:
+        label = str(loc.get("label"))
+        rule = next((r for r in rules if str((r.get("body_label") or {}).get("name")) == label), None)
+        if rule is None:
+            print(f"        MISMATCH  dlo rule for label {label!r} missing on read-back")
+            d.bad += 1
+            continue
+        got_ids = _expand_locales((rule.get("customization_spec") or {}).get("locales"))
+        d.check(f"        dlo[{label}] locales", sorted(_expand_locales(loc.get("ids"))), sorted(got_ids))
+        d.check(f"        dlo[{label}] is_default", bool(loc.get("is_default")), bool(rule.get("is_default")))
+        d.check(f"        dlo[{label}] body", loc.get("body"), _text_for_label(feed.get("bodies"), label))
+        d.check(f"        dlo[{label}] title", loc.get("title"), _text_for_label(feed.get("titles"), label))
+
+
 def completeness(d: Diff, state: dict, spec: dict | None) -> None:
     """Refuse to bless a tree that did not finish building.
 
@@ -246,7 +312,17 @@ def main() -> int:
             print(f"    MISMATCH  campaign carries a budget ({camp['daily_budget']}) under ABO")
             d.bad += 1
         d.check("special_ad_categories", c["special_ad_categories"], camp.get("special_ad_categories"))
-    d.check("status", "PAUSED", camp.get("status"))
+    # A reused campaign (spec.campaign.id) keeps whatever status it already had — nothing to
+    # assert. A freshly built one is compared against the spec's create_status: default
+    # ACTIVE means an actual PAUSED reads as a MISMATCH (launch.py creates it PAUSED and
+    # flips it ACTIVE once the whole tree exists — PAUSED here means that flip never landed);
+    # the create_status: PAUSED override means PAUSED is correct and ACTIVE would be the
+    # surprise instead.
+    if spec and spec.get("campaign", {}).get("id"):
+        expected_status = camp.get("status")
+    else:
+        expected_status = (spec or {}).get("create_status", "ACTIVE")
+    d.check("status", expected_status, camp.get("status"))
     d.status("effective_status", camp.get("effective_status"))
 
     i = 0
@@ -263,7 +339,8 @@ def main() -> int:
             s = spec["adsets"][i]
             d.check("optimization_goal", s["optimization_goal"], a.get("optimization_goal"))
             d.check("billing_event", s.get("billing_event", "IMPRESSIONS"), a.get("billing_event"))
-            d.check("start_time", s["start_time"], a.get("start_time"))
+            start_expected = (state.get("start_overrides") or {}).get(f"adset[{i}]", s["start_time"])
+            d.check("start_time", start_expected, a.get("start_time"))
             if s.get("end_time"):
                 d.check("end_time", s["end_time"], a.get("end_time"))
             # promoted_object: the same precedence launch.py uses (explicit object, else
@@ -282,15 +359,24 @@ def main() -> int:
             expected_t = launch.build_targeting(s)
             actual_t = a.get("targeting") or {}
             for key in expected_t:
-                d.check(f"targeting.{key}", expected_t[key], actual_t.get(key))
+                want = expected_t[key]
+                if key == "geo_locations":
+                    want = normalize_location_types(want)
+                d.check(f"targeting.{key}", want, actual_t.get(key))
         if spec and spec["budget_mode"] == "ABO":
             d.check("daily_budget (minor)", s["daily_budget_minor"], a.get("daily_budget"))
             d.check("bid_strategy", s.get("bid_strategy", "LOWEST_COST_WITHOUT_CAP"), a.get("bid_strategy"))
             if s.get("bid_amount_minor"):
                 d.check("bid_amount (minor)", s["bid_amount_minor"], a.get("bid_amount"))
-        elif spec and a.get("daily_budget"):
-            print(f"    MISMATCH  ad set carries its own budget ({a['daily_budget']}) under CBO")
-            d.bad += 1
+        elif spec:
+            if a.get("daily_budget"):
+                print(f"    MISMATCH  ad set carries its own budget ({a['daily_budget']}) under CBO")
+                d.bad += 1
+            # CBO with a cap strategy (COST_CAP / LOWEST_COST_WITH_BID_CAP) still puts the
+            # cap AMOUNT on the ad set (1815857) even though budget/bid_strategy live on
+            # the campaign — read it back the same way ABO's bid_amount is diffed above.
+            if s.get("bid_amount_minor"):
+                d.check("bid_amount (minor)", s["bid_amount_minor"], a.get("bid_amount"))
         # Reading this back is not cosmetic: an unknown key inside attribution_spec is
         # ignored by Graph, so a wrong field name looks like a success and leaves the
         # account default in place. launch.py always sends one unless the spec opted into
@@ -320,6 +406,11 @@ def main() -> int:
                         print(f"    MISMATCH  {key} empty on an EU/EEA ad set — account defaults did "
                               "not fill it (Business Settings → default_dsa_*)")
                         d.bad += 1
+        if spec:
+            # Ad sets and ads are always created by this run (only the campaign can be
+            # reused), so their configured status must equal create_status. launch.py never
+            # flips them after create — only a reused-free campaign is flipped PAUSED→ACTIVE.
+            d.check("status", spec.get("create_status", "ACTIVE"), a.get("status"))
         d.status("effective_status", a.get("effective_status"))
         if a.get("issues_info"):
             print(f"    ISSUES  {a['issues_info']}")
@@ -368,10 +459,27 @@ def main() -> int:
                 elif wc.get("kind") == "dlo":
                     feed = creative.get("asset_feed_spec") or {}
                     d.check("        dlo bodies (count)", len(wc.get("locales") or []), len(feed.get("bodies") or []))
-                    d.check("        dlo image_hash", wc.get("image_hash"),
-                            next((im.get("hash") for im in feed.get("images") or []), None))
+                    check_dlo_feed(d, wc, feed)
+                    if wc.get("ad_format") == "SINGLE_VIDEO":
+                        # Video DLO: Graph keeps per-slot generated thumbnails, no feed images,
+                        # and re-ids every video on read-back (04) — check slot count only.
+                        d.check("        dlo videos (count)", len(wc.get("locales") or []),
+                                len(feed.get("videos") or []))
+                    else:
+                        d.check("        dlo image_hash", wc.get("image_hash"),
+                                next((im.get("hash") for im in feed.get("images") or []), None))
                 elif str(wc.get("kind", "")).startswith("catalog"):
                     d.check("        product_set_id", str(wc.get("product_set_id")), creative.get("product_set_id"))
+                    # Swap-safe texts (launch.py defaults): what the card shows after the swap.
+                    td = story.get("template_data") or {}
+                    d.check("        message", wc.get("message", "-----"), td.get("message"))
+                    d.check("        headline", wc.get("headline", "{{product.name}}"), td.get("name"))
+                    if wc.get("kind") == "catalog_carousel" and td.get("description") is None:
+                        print("        ..    description: not stored on catalog carousels (cards render per product)")
+                    else:
+                        d.check("        description", wc.get("description", "{{product.description}}"),
+                                td.get("description"))
+                    d.check("        cta", wc.get("cta", "LEARN_MORE"), (td.get("call_to_action") or {}).get("type"))
                 d.check("        name", spec["adsets"][i]["ads"][j].get("name"), ad.get("name"))
             if not story.get("instagram_user_id"):
                 print("        WARN  no instagram_user_id — any IG placement will fail 1772103")
@@ -386,12 +494,12 @@ def main() -> int:
                 print(f"        url_tags {creative.get('url_tags')}")
             # Multi-advertiser ads. OPT_OUT reads back on template_data/link creatives; on
             # FORMAT_AUTOMATION collection creatives the field is not readable, so the UI
-            # checkbox (while PAUSED) is the only proof — say so instead of passing silently.
+            # checkbox is the only proof — say so instead of passing silently.
             cma = (creative.get("contextual_multi_ads") or {}).get("enroll_status")
             want_multi = bool(want_c.get("multi_advertiser")) if want_c else False
             if cma is None:
                 print("        WARN  contextual_multi_ads not readable — confirm the Multi-advertiser "
-                      "checkbox is OFF in Ads Manager while PAUSED")
+                      "checkbox is OFF in Ads Manager now (before it spends)")
             elif not want_multi and cma != "OPT_OUT":
                 print(f"        MISMATCH  contextual_multi_ads={cma}, expected OPT_OUT")
                 d.bad += 1
@@ -408,6 +516,8 @@ def main() -> int:
                 d.bad += 1
             else:
                 print(f"        ..    enhancements OPT_IN: {opted_in or 'none'}")
+            if spec:
+                d.check("        status", spec.get("create_status", "ACTIVE"), ad.get("status"))
             d.status("        effective_status", ad.get("effective_status"))
             if ad.get("issues_info"):
                 print(f"        ISSUES  {ad['issues_info']}")
@@ -416,7 +526,9 @@ def main() -> int:
         i += 1
 
     if d.bad:
-        print(f"\n{d.bad} problem(s). Do NOT activate.", file=sys.stderr)
+        print(f"\n{d.bad} problem(s). If this tree is create_status: PAUSED, do NOT activate. "
+              "If it is ACTIVE (the default), it is already spending — pause it first "
+              "(edit status --confirm PAUSE), diagnose second.", file=sys.stderr)
         return 1
     write_receipt(args.state, args.spec, spec)
     if spec:
@@ -427,7 +539,7 @@ def main() -> int:
         scope = "statuses and destinations only (no --spec) — this receipt does NOT satisfy activate.py"
     print(f"\nVerified {scope}; nothing is blocked. Receipt written next to the state file. "
           "Anything the spec did not set was not compared — preview each placement in Ads Manager "
-          "before activate.py.")
+          "(before activate.py under create_status: PAUSED; otherwise it is already live).")
     return 0
 
 

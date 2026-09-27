@@ -2,6 +2,9 @@
 """Offline contract tests for sheetfeed.py. No Google credentials or network."""
 
 from __future__ import annotations
+import os as _os, tempfile as _tempfile
+_os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
+_os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
 import unittest
 from unittest import mock
