@@ -188,7 +188,7 @@ Free-source rule: prefer clear free/no-attribution pages; on freemium marketplac
 - ⭐ **Haikei** — https://haikei.app (blobs, waves, layers, blurry gradients) · **Hero Patterns** — https://heropatterns.com (SVG tiles) · **Pattern Monster** — https://pattern.monster (320+ SVG patterns).
 - **SVG Backgrounds** — https://www.svgbackgrounds.com — customizable SVG backgrounds/patterns; section texture.
 - **Gradients:** **gradient.style** (Argyle, conic/CSS4) · **Coolhue** · **Hypercolor** (Tailwind gradient classes) · mesh tools above.
-- **Blobs/shapes:** **Blobmaker** — https://blobmaker.app · **Blobs.app**.
+- **Blobs/shapes:** **Blobmaker** — https://www.blobmaker.app · **Blobs.app**.
 - **Animated JS backgrounds:** **Vanta.js** — https://vantajs.com · **Particles** (tsParticles).
 - **Glassmorphism:** **css.glass** — https://css.glass (`backdrop-filter` + translucent bg + subtle border).
 
