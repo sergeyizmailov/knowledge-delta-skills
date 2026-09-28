@@ -6,7 +6,7 @@ prompt-injection vectors, exfiltration of local files — please report it.
 
 ## Reporting
 
-Use GitHub's private **[Report a vulnerability](https://github.com/sergeyizmailov/knowledge-delta-skills/security/advisories/new)**
+Use GitHub's private **[Report a vulnerability](https://github.com/slilbudget/knowledge-delta-skills/security/advisories/new)**
 flow rather than a public issue. Include the skill name, the risky instruction or
 script, and a minimal reproduction.
 

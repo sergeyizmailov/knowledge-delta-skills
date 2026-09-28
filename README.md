@@ -2,7 +2,7 @@
 
 # knowledge-delta-skills
 
-[![CI](https://github.com/sergeyizmailov/knowledge-delta-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/sergeyizmailov/knowledge-delta-skills/actions/workflows/ci.yml)
+[![CI](https://github.com/slilbudget/knowledge-delta-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/slilbudget/knowledge-delta-skills/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills standard](https://img.shields.io/badge/Agent%20Skills-open%20standard-8A2BE2)](https://agentskills.io)
 [![Runtimes](https://img.shields.io/badge/runs%20on-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Cursor%20%C2%B7%20Gemini%20CLI%20%C2%B7%20opencode-555)](#install)
@@ -84,7 +84,7 @@ Every skill, by domain: [`CATALOG.md`](CATALOG.md).
 Copy the skill directories you want — nothing else to configure.
 
 ```bash
-git clone https://github.com/sergeyizmailov/knowledge-delta-skills.git
+git clone https://github.com/slilbudget/knowledge-delta-skills.git
 mkdir -p ~/.claude/skills
 cd knowledge-delta-skills/skills
 cp -R meta-ads ~/.claude/skills/                                                    # one skill
