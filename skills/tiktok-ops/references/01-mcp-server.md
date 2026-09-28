@@ -135,7 +135,7 @@ TikTok does not publish the tool schemas as a document. Two consequences:
 2. For wrapper tools, the **v1.3 endpoint reference is the schema** — same fields, same enums. `03`
    holds the enums that decide a call succeeds or fails.
 
-## MCP is the primary surface. `ttops` is the guard rail around it.
+## MCP is the primary surface. `ttops` is the guard rail around it
 
 This is not two competing paths. MCP does the work; `ttops` checks it.
 

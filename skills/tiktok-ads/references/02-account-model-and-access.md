@@ -33,7 +33,7 @@ Three distinctions that cause real failures:
 
 ## Roles — the matrix that decides whether you can do the job
 
-**BC level**
+### BC level
 
 | | Admin | Standard |
 |---|---|---|
@@ -47,7 +47,7 @@ Three distinctions that cause real failures:
 Finance is an **overlay**, not a level: *Finance Manager* manages balance/payment methods/billing
 groups, pays invoices, applies for a credit line; *Finance Analyst* is read-only over the same.
 
-**Ad-account / asset level — this is the role a shared buyer actually receives**
+### Ad-account / asset level — this is the role a shared buyer actually receives
 
 | | Admin | Operator | Analyst |
 |---|---|---|---|

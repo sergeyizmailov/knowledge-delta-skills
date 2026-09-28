@@ -118,7 +118,7 @@ Two current TikTok help-centre pages, both verified 2026-09-14:
 
 > **Learning Phase:** "Volatility starts to decline after about **25 campaign results or 7 days**
 > from when the campaign enters the learning phase."
-
+>
 > **Troubleshooting auction ad delivery:** "give your ads a full **7 days to reach 50 conversions**".
 
 **Do not quote one and suppress the other.** They are answering different questions and the gap

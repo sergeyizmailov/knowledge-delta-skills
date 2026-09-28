@@ -103,7 +103,7 @@ offline, all tokenless.
 
 ---
 
-# The token path — bulk, unattended, and operations MCP does not wrap
+## The token path — bulk, unattended, and operations MCP does not wrap
 
 **Everything below needs a developer-app token.** An MCP-only operator can stop reading here.
 

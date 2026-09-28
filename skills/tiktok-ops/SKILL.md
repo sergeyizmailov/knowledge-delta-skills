@@ -44,7 +44,7 @@ expired" on a Marketing API call is a strong signal that you are holding a TikTo
 own SDK docs. Check the token's origin before concluding it; it is the first hypothesis, not a
 certainty.
 
-## MCP is the default. `ttops` is the guard rail.
+## MCP is the default. `ttops` is the guard rail
 
 TikTok ships an **official MCP server** (July 2026) that covers essentially the whole job — campaign
 creation, budgets, targeting, creative upload, catalogs, audiences, reporting, automated rules,
