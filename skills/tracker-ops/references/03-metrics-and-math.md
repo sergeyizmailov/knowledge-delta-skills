@@ -134,8 +134,10 @@ its parameters:
 
 - Tracker splits by `ad_campaign_id` ONLY because your URL feeds the campaign
   name into it (01). Per-ad splits need `{{ad.id}}`→sub_id_N mapped.
-- FB naming discipline IS the tracking plan (meta-grey-ops/03): campaign name =
-  ad account, ad name = creative.
+- FB naming discipline IS the tracking plan (meta-grey-ops/03): agency setups use campaign name =
+  ad account; our Keitaro-id contract is campaign name `<keitaro id> US PWA … <buyer>` with the account in
+  `act=`/sub10, ad name = creative. Names repeat and name macros are snapshots: key cost and joins on
+  ids (`ad_campaign_id`, `sub_id_6`), not names. No casino names in FB names on the own BM.
 - Pin the payout `status` in the contract too — optimization event, tracker
   status, and payout event must line up or CPL/ROI measures the wrong thing.
 
@@ -197,7 +199,7 @@ as `startapp` (hash recommended). No Pixel fire → no dedup pair, still send a
 stable `event_id`.
 
 ```bash
-curl -sS -X POST "https://graph.facebook.com/v21.0/${DATASET_ID}/events" \
+curl -sS -X POST "https://graph.facebook.com/v26.0/${DATASET_ID}/events" \
   -d access_token="${CAPI_TOKEN}" \
   --data-urlencode data='[{
     "event_name": "Lead",
@@ -214,23 +216,23 @@ curl -sS -X POST "https://graph.facebook.com/v21.0/${DATASET_ID}/events" \
   }]'
 ```
 
-Pin Graph version to whatever Events Manager shows (`v21.0` is an example, not
-a freeze). Use `test_event_code` until green. Purchase needs
+Pin the Graph version to the workspace pin (`v26.0` since 2026-07-29; `v24.0` stops on
+2026-10-06 for Marketing API calls, so old copies of this curl with `v21.0`/`v24.0` need bumping). Use `test_event_code` until green. Purchase needs
 `custom_data.value`+`currency`. Status→event mapping is the contract above,
 not this curl.
 
 ## Daily routine (automate)
 
 For YESTERDAY (account tz): pull Meta spend/impr/clicks per live account →
-push real spend per FB campaign per day (filter = the param carrying campaign
-name, 01; idempotent) → confirm readback + no spend lost on zero-click days →
+push real spend per FB ad (or campaign) per day (filter = the id params
+`sub_id_6` / `ad_campaign_id`, not names, 01; idempotent; one entry per account tz/currency) → confirm readback + no spend lost on zero-click days →
 pull tracker payout count (reg = leads + sales; money = `sale_revenue`) →
 fill team report (raw columns, formulas compute) → read per-account CPL vs
 target → kill/watch/scale → log snapshot. End of day: re-push the same days
 after late conversions (mandatory if the campaign cost model is CPA/CPS auto,
 01) (FIELD 2026-09-27). Missed days: re-run per date
-(`meta-grey-ops/scripts/insights.py --since/--until`, or your own script with
-a date arg).
+(`metaops insights pull --since/--until`, or `meta-grey-ops/scripts/insights.py`). `metaops keitaro push`
+(01) builds and sends the update_costs POST; re-push the trailing 2-3 days each run (its default).
 
 ## Reporting upward
 

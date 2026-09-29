@@ -123,7 +123,8 @@ long-lived immediately, store in a secrets manager.
 - 2490468 HARD_ERROR: a REJECTED ad cannot be flipped to ACTIVE via API while the
   disapproval stands. Help Center: editing the violating component (creative, targeting,
   landing page) re-submits it for review; build new only when the creative/offer itself is
-  non-compliant (grey-ops practice: don't fight rejects, leave them off — meta-grey-ops/05).
+  non-compliant. Operator rule (own BM): on a disapproval do not edit or resubmit — leave the ad
+  off (meta-grey-ops/05, /23).
 - 31 / subcode **3858013** "You need to verify a phone number for this ad account" on POST `/ads` (field 2026-09-26, fresh farm account): Meta's new-advertiser phone gate. Campaign/ad set/creative create fine; only the ad fails, and in the UI the prompt appears when Advantage+ catalog ads is switched on. Fix: persona verifies a phone in Ads Manager (SMS), then resume. Not fixable via API.
 - **#10** on `POST /{page_id}/page_backed_instagram_accounts`: the endpoint is deprecated (v22.0, all versions since 2025-04-21). Create the PBIA in the UI (Identity → Use Facebook Page).
 - 100 / subcode **1772103** "Instagram Account Is Missing" on POST `/ads`: the
@@ -185,7 +186,8 @@ carrying `enroll_status: OPT_IN|OPT_OUT`. Opt out feature-by-feature.
 - "Not delivering", no error: future start_time (normal), review pending,
   billing hold, or spend caps.
 - Disabled/restricted account: check Account Quality for the asset + reason,
-  fix, appeal in-product. Do not rebuild assets to evade enforcement.
+  fix, appeal in-product. Do not rebuild assets to evade enforcement. (Operator lane:
+  triage first, `meta-grey-ops/23`.)
 
 ## Rate limits (doc-confirmed — **Marketing API** rate-limiting page, verified 2026-08-31)
 

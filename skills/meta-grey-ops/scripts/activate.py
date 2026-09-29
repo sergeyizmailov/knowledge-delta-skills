@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 
 import graph
 
@@ -31,6 +32,32 @@ def receipt_path(state_path: str) -> str:
 def file_sha(path: str) -> str:
     with open(path, "rb") as fh:
         return hashlib.sha256(fh.read()).hexdigest()[:16]
+
+
+def write_state(state_path: str, state: dict) -> None:
+    """Atomic, 0o600, redacted rewrite of the state file — the same write launch.State.save
+    performs, so a crash mid-write cannot leave a half-written resume log."""
+    parent = os.path.dirname(state_path) or "."
+    payload = graph.redact(json.dumps(state, indent=2, default=str))
+    fd, tmp = tempfile.mkstemp(prefix=".state.", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, state_path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def record_start_override(state_path: str, state: dict, index: int, start_time: str) -> None:
+    """Remember that ad set `index` was re-dated after the build.
+
+    verify.py compares an ad set's start_time with `state["start_overrides"]["adset[i]"]`
+    (falling back to the spec's start_time); without this entry a verify after
+    `--refresh-start` reports every re-dated ad set as a start_time MISMATCH."""
+    state.setdefault("start_overrides", {})[f"adset[{index}]"] = start_time
+    write_state(state_path, state)
 
 
 def verify_receipt_max_age() -> int:
@@ -113,7 +140,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--state", required=True)
     ap.add_argument("--confirm", help="Must be the literal string SPEND")
-    ap.add_argument("--refresh-start", help="ISO8601 start_time to set before activating")
+    ap.add_argument("--refresh-start", help="ISO8601 start_time to set on every ad set before activating; "
+                    "each ad set that took it is recorded in the state as start_overrides[adset[i]] "
+                    "so a later verify compares against it (the verify receipt is then stale: re-run verify)")
     args = ap.parse_args()
 
     if args.confirm != "SPEND":
@@ -164,6 +193,9 @@ def main() -> int:
                 graph.post(objects[f"adset[{i}]"], {"start_time": args.refresh_start},
                            context=f"refresh start adset[{i}]", idempotent=True)
                 print(f"  start_time → {args.refresh_start} on adset[{i}]")
+                # Only a change that landed is recorded: the 1487057 branch below means the
+                # ad set kept its old (past) start_time.
+                record_start_override(args.state, state, i, args.refresh_start)
             except graph.GraphError as e:
                 if e.subcode == 1487057 or "1487057" in str(e):
                     print(f"  start_time already active on adset[{i}] — will start immediately")

@@ -21,8 +21,11 @@ Rules this enforces:
     a real run refuses to start unless a matching dry-run state marker exists)
   · same template + same account twice → resumes from state, never duplicates
   · one creative per account is the cross-account rule (03) — the template may name
-    per-account media via `media` keys in the account row; identical creatives across
-    accounts are allowed but WARNED about
+    per-account media via a `media` object in the account row, keyed by the EXPANDED ad name
+    ("<name>") or by "<adset index>:<name>" for one ad only (needed when ad names repeat
+    across ad sets); a miss, an unused key, or one name shared by several ads is warned about.
+    Identical creatives across accounts are allowed but WARNED about
+  · spec warnings (placements, bid policy, longread lint) are printed per account
 """
 
 from __future__ import annotations
@@ -81,13 +84,52 @@ def expand_tags(obj: Any, tag: str) -> Any:
 
 
 def apply_media(spec: dict, media: dict) -> dict:
-    """Per-account media: {"<ad name>": {"video_id": ..., "image_hash": ...}} — hashes are
-    account-scoped (04 → Media), so a shared template cannot carry them."""
-    for aset in spec["adsets"]:
+    """Per-account media — hashes are account-scoped (04 → Media), so a shared template cannot
+    carry them. Call this AFTER expand_tags: it keys on the EXPANDED ad name.
+
+    Keys of `media`, most specific first:
+      "<adset index>:<ad name>"   that one ad only (`"2:J41-16|img-3"`) — use this whenever
+                                  ad names repeat across ad sets (1-N-1 with one image each)
+      "<ad name>"                 every ad with that name; a name shared by several ads is
+                                  WARNED about, because they all get the same media
+    Values: {"image_hash": ..., "video_id": ...}. A key may still contain `{tag}`; it is
+    expanded with the account tag by resolve().
+
+    Warned on stderr, never silent: an ad that matched no key, and a key that matched no ad."""
+    used: set[str] = set()
+    by_name: dict[str, list[int]] = {}
+    # A name that still holds a `{tag}` placeholder is not final (metaops' workspace check calls
+    # this before expansion): a miss there proves nothing, so it is not reported.
+    final = True
+    for i, aset in enumerate(spec["adsets"]):
         for ad in aset["ads"]:
-            m = media.get(ad["name"])
-            if m:
-                ad["creative"].update(m)
+            if "{tag}" in ad["name"]:
+                final = False
+            hit = None
+            for key in (f"{i}:{ad['name']}", ad["name"]):
+                if key in media:
+                    hit = key
+                    break
+            if hit is None:
+                if "{tag}" not in ad["name"]:
+                    print(f"  ! media: no entry for ad {ad['name']!r} (adset {i}); keys tried "
+                          f"{i}:{ad['name']!r} and {ad['name']!r}. The ad keeps the template's media.",
+                          file=sys.stderr)
+                continue
+            used.add(hit)
+            if hit == ad["name"]:
+                by_name.setdefault(hit, []).append(i)
+            ad["creative"].update(media[hit])
+    for name, idx in by_name.items():
+        if len(idx) > 1:
+            print(f"  ! media: key {name!r} was applied to {len(idx)} ads (adsets {idx}) that share "
+                  f"one name, so they all got the SAME media. For per-ad-set media use "
+                  f"\"<adset index>:{name}\" keys.", file=sys.stderr)
+    if final:
+        for key in media:
+            if key not in used:
+                print(f"  ! media: key {key!r} matched no ad (ad names are compared after {{tag}} "
+                      "expansion)", file=sys.stderr)
     return spec
 
 
@@ -99,9 +141,10 @@ def resolve(template: dict, row: dict, run: str) -> tuple[dict, str]:
             spec[key] = row[key]
     if row.get("overrides"):
         spec = deep_merge(spec, row["overrides"])
-    if row.get("media"):
-        spec = apply_media(spec, row["media"])
     spec = expand_tags(spec, tag)
+    if row.get("media"):
+        media = {expand_tags(k, tag): expand_tags(v, tag) for k, v in row["media"].items()}
+        spec = apply_media(spec, media)
     spec["run_id"] = f"{run}-{tag}"
 
     out_dir = pathlib.Path(BULK_DIR) / run
@@ -225,6 +268,8 @@ def main() -> int:
             results.append((acct, "SPEC ERROR", str(e)))
             print(f"  x spec: {e}", file=sys.stderr)
             continue
+        for warning in launch.spec_warnings(spec):
+            print(f"  WARNING: {warning}", file=sys.stderr)
         left = unresolved(spec)
         if left:
             results.append((acct, "SPEC ERROR", f"REPLACE_ME left at {left}"))

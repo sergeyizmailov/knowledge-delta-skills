@@ -3,10 +3,12 @@
 
     python3 rules.py --account act_1 --target-minor 1200 --event offsite_conversion.fb_pixel_complete_registration \
                      --level ADSET --rungs 0-6 --mode notify --prefix "LADDER|reg|"
-    python3 rules.py ... --mode pause                       # the real thing
+    python3 rules.py ... --mode pause --ids 111,222          # the real thing, scoped to ad sets
+    python3 rules.py ... --mode pause --all-adsets           # the real thing, no id filter (explicit)
     python3 rules.py ... --ids 111,222                       # scope to specific ad sets
     python3 rules.py --account act_1 --list
-    python3 rules.py --account act_1 --execute <rule_id>     # dry-fire one rule, read history
+    python3 rules.py --account act_1 --execute <rule_id>     # dry-fire one NOTIFICATION rule, read history
+    python3 rules.py --account act_1 --execute <rule_id> --live   # fire a rule that is not NOTIFICATION
     python3 rules.py --account act_1 --delete-prefix "LADDER|reg|"
     python3 rules.py --ladder-only --target-minor 1200 --rungs 0-10   # print thresholds, no API
 
@@ -26,11 +28,21 @@ Platform rules encoded (field-observed, senior-buyer-ops/04):
     · every rule needs entity_type or id · 250 rules per account · SEMI_HOURLY works
   · pausing at ADSET level triggers no creative re-review
   · dry run: create as NOTIFICATION, POST /{rule}/execute, read adrules_history (lags ~1-2 min)
+
+Safety encoded here:
+  · a rule name ends in a short hash of its full scope (level, event, ids, time_preset, account
+    currency, confidence, mode), so two ladders that differ in scope never share a name and the
+    second is never skipped as "already exists". A rule with the SAME name but different filters
+    aborts the run before anything is created; an identical one is an idempotent skip. Rules armed
+    before the hash existed (name without it) are recognised when their filters are identical.
+  · `--mode pause` needs --ids or the explicit --all-adsets: no scope, no unattended pausing
+  · `--execute` refuses any rule whose execution_type is not NOTIFICATION unless --live
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -94,6 +106,56 @@ def build_rule(name: str, level: str, k: int, spend_minor: int, event: str, mode
         "schedule_spec": {"schedule_type": schedule},
         "status": "ENABLED",
     }
+
+
+def scope_hash(level: str, event: str, ids: list[str] | None, time_preset: str, currency: str,
+               confidence: float, mode: str) -> str:
+    """8 hex chars over everything that decides WHAT a ladder rule watches and does."""
+    scope = {"level": level, "event": event, "ids": sorted(ids) if ids else None,
+             "time_preset": time_preset, "currency": currency or "", "confidence": float(confidence),
+             "mode": mode}
+    return hashlib.sha256(json.dumps(scope, sort_keys=True).encode("utf-8")).hexdigest()[:8]
+
+
+def _norm_value(value):
+    if isinstance(value, list):
+        return sorted(str(v) for v in value)
+    return str(value)
+
+
+def rule_signature(rule: dict) -> tuple:
+    """What makes two rules the same: filters (field/operator/value, order-free, Graph may return
+    numbers as strings), execution type and schedule type."""
+    filters = sorted(
+        json.dumps({"field": f.get("field"), "operator": f.get("operator"), "value": _norm_value(f.get("value"))},
+                   sort_keys=True)
+        for f in ((rule.get("evaluation_spec") or {}).get("filters") or [])
+    )
+    return (tuple(filters), (rule.get("execution_spec") or {}).get("execution_type"),
+            (rule.get("schedule_spec") or {}).get("schedule_type"))
+
+
+def _same_rule(existing: dict, wanted_payload: dict) -> bool:
+    """True when every filter we post is in the existing rule (Graph may add filters of its own to a
+    returned rule) and the execution and schedule types match."""
+    have, want = rule_signature(existing), rule_signature(wanted_payload)
+    return set(want[0]) <= set(have[0]) and have[1:] == want[1:]
+
+
+def match_existing(library: list[dict], name: str, legacy_name: str, payload: dict) -> str:
+    """"none" | "identical" | "different" for a rule about to be created.
+
+    Same name + same signature is an idempotent repeat; same name + different filters is a
+    collision that must stop the run (skipping it would leave the operator believing the ladder
+    they asked for is armed). A legacy-named rule (armed before names carried the scope hash) only
+    counts when its signature is identical."""
+    for rule in library:
+        if rule.get("name") == name:
+            return "identical" if _same_rule(rule, payload) else "different"
+    for rule in library:
+        if rule.get("name") == legacy_name and _same_rule(rule, payload):
+            return "identical"
+    return "none"
 
 
 def list_rules(account: str) -> list[dict]:
@@ -185,6 +247,13 @@ def create_one_rule(account: str, name: str, payload: dict) -> str:
 
 
 def main() -> int:
+    """Every call of this script rides the rules token (META_TOKEN_RULES, else META_TOKEN when its
+    class carries `rules`; tokens.py / graph.resolve_token)."""
+    with graph.using_capability("rules"):
+        return _main()
+
+
+def _main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--account", help="act_<id>")
     ap.add_argument("--target-minor", type=int, help="target cost per payout-proxy event, minor units")
@@ -198,11 +267,17 @@ def main() -> int:
     ap.add_argument("--time-preset", default="LIFETIME", help="LIFETIME | LAST_7D | LAST_3D | TODAY …")
     ap.add_argument("--schedule", default="SEMI_HOURLY", choices=["SEMI_HOURLY", "HOURLY", "DAILY"])
     ap.add_argument("--ids", help="scope to these object ids (comma-separated)")
+    ap.add_argument("--all-adsets", action="store_true",
+                    help="explicit scope for --mode pause without --ids: NO id filter, the rules cover every "
+                         "object at --level in the account")
     ap.add_argument("--impressions-floor", type=int, help="gate the verdict on delivery existing")
     ap.add_argument("--prefix", default="LADDER|", help="rule name prefix; {k} available")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--execute", help="rule id: fire now and read adrules_history")
     ap.add_argument("--confirm", help="literal EXECUTE when using --execute")
+    ap.add_argument("--live", action="store_true",
+                    help="with --execute: also fire a rule whose execution_type is not NOTIFICATION "
+                         "(a PAUSE rule pauses objects for real)")
     ap.add_argument("--delete-prefix", help="delete every rule whose name starts with this")
     ap.add_argument("--history", action="store_true", help="read adrules_history for the account")
     ap.add_argument("--since", help="--history filter: Unix timestamp or ISO-8601 datetime")
@@ -213,6 +288,14 @@ def main() -> int:
     if needs_ladder(args):
         if not args.target_minor:
             sys.exit("--target-minor is required to build a ladder")
+        if not 0 < args.confidence < 1:
+            sys.exit(f"--confidence must be strictly between 0 and 1 (e.g. 0.95), got {args.confidence}")
+        if not args.ladder_only:
+            if args.ids is not None and args.all_adsets:
+                sys.exit("pick one scope: --ids or --all-adsets")
+            if args.mode == "pause" and not args.ids and not args.all_adsets:
+                sys.exit("--mode pause arms unattended pausing and needs an explicit scope: pass --ids "
+                         "a,b (only those objects) or --all-adsets (every object at --level, no id filter)")
         rows = ladder(args.target_minor, parse_rungs(args.rungs), args.confidence)
         print(f"ladder @ {args.confidence:.0%}, target {args.target_minor} minor, event {args.event}, {args.level}, {args.time_preset}")
         for r in rows:
@@ -264,8 +347,13 @@ def main() -> int:
     if args.execute:
         if args.confirm != "EXECUTE":
             sys.exit("--execute can trigger a live rule: pass --confirm EXECUTE")
-        if str(args.execute) not in {str(rule.get("id")) for rule in list_rules(account)}:
+        target = next((rule for rule in list_rules(account) if str(rule.get("id")) == str(args.execute)), None)
+        if target is None:
             sys.exit(f"rule {args.execute} is not in {account}'s rules library")
+        execution_type = (target.get("execution_spec") or {}).get("execution_type")
+        if execution_type != "NOTIFICATION" and not args.live:
+            sys.exit(f"rule {args.execute} executes as {execution_type or 'an unknown action'}, not NOTIFICATION: "
+                     f"firing it acts on real objects now (a PAUSE rule pauses them). Pass --live to fire it anyway")
         graph.post(f"{args.execute}/execute", {}, context="execute rule", idempotent=True)
         print("  fired; reading history (lags 1-2 min) …")
         time.sleep(20)
@@ -273,7 +361,8 @@ def main() -> int:
         for h in hist:
             print(json.dumps(h, indent=2))
         print(json.dumps({"schema": "rules.result/v1", "ok": True, "action": "execute",
-                          "rule_id": args.execute, "history": hist}, ensure_ascii=False))
+                          "rule_id": args.execute, "execution_type": execution_type, "live": bool(args.live),
+                          "history": hist}, ensure_ascii=False))
         return 0
 
     ids = [i.strip() for i in args.ids.split(",") if i.strip()] if args.ids else None
@@ -281,25 +370,44 @@ def main() -> int:
         sys.exit("--ids must contain at least one object id")
     if ids:
         require_ids_in_account(ids, account)
+    currency = str(graph.get(account, params={"fields": "currency"}, context="account currency").get("currency") or "")
     library = list_rules(account)
     if len(library) + len(rows) > 250:
         sys.exit(f"{len(library)} rules exist; adding {len(rows)} exceeds the 250/account cap")
-    created = []
-    skipped: list[str] = []
+    scope = scope_hash(args.level, args.event, ids, args.time_preset, currency, args.confidence, args.mode)
+    plan = []
     for r in rows:
-        name = f"{args.prefix.replace('{k}', str(r['k']))}k{r['k']}|>{r['spend_minor']}|<{r['k'] + 1}|{args.mode}"
+        legacy_name = f"{args.prefix.replace('{k}', str(r['k']))}k{r['k']}|>{r['spend_minor']}|<{r['k'] + 1}|{args.mode}"
+        name = f"{legacy_name}|{scope}"
         payload = build_rule(name, args.level, r["k"], r["spend_minor"], args.event, args.mode,
                              args.time_preset, ids, args.impressions_floor, args.schedule)
+        plan.append((name, legacy_name, payload))
+    # Collisions are found BEFORE the first POST: the run either arms the whole ladder or none of it.
+    clashes = [name for name, legacy_name, payload in plan
+               if match_existing(library, name, legacy_name, payload) == "different"]
+    if clashes:
+        sys.exit(f"rule(s) already exist with the same name but DIFFERENT filters/action: {', '.join(clashes)}. "
+                 f"Nothing was created. Delete them (`--delete-prefix`) or use another --prefix; "
+                 f"a name is never reused for a rule that watches something else")
+    created = []
+    skipped: list[str] = []
+    for name, legacy_name, payload in plan:
         if args.dry_run:
-            print(f"  would POST /adrules_library {json.dumps(payload)}")
+            if match_existing(library, name, legacy_name, payload) == "identical":
+                print(f"  = would skip {name}: an identical rule already exists")
+                skipped.append(name)
+            else:
+                print(f"  would POST /adrules_library {json.dumps(payload)}")
             continue
-        # Dedup by name inside the loop (not just the pre-fetched library): a rung
-        # created earlier in THIS run, or landed during an outcome_unknown break,
-        # must not be posted twice.
-        known = {str(row.get("name") or "") for row in list_rules(account)} if created else \
-            {str(row.get("name") or "") for row in library}
-        if name in known:
-            print(f"  = {name} already exists — skipping (dedup by name, no duplicate)")
+        # Dedup inside the loop (not just against the pre-fetched library): a rung created
+        # earlier in THIS run, or landed during an outcome_unknown break, must not be posted twice.
+        current = list_rules(account) if created else library
+        state = match_existing(current, name, legacy_name, payload)
+        if state == "different":
+            sys.exit(f"rule {name} appeared with DIFFERENT filters/action while this run was arming; "
+                     f"stopping. Check `rules list` before retrying")
+        if state == "identical":
+            print(f"  = {name} already exists with identical filters — skipping (idempotent)")
             skipped.append(name)
             continue
         try:
@@ -319,7 +427,7 @@ def main() -> int:
         print("LIFETIME sticks on relaunch: a paused ad set keeps its lifetime counts. Duplicate the ad "
               "set (clone.py) or use --time-preset LAST_7D.")
     print(json.dumps({"schema": "rules.result/v1", "ok": True, "action": "create",
-                      "dry_run": args.dry_run, "mode": args.mode, "created": created,
+                      "dry_run": args.dry_run, "mode": args.mode, "scope_hash": scope, "created": created,
                       "skipped_existing": skipped},
                      ensure_ascii=False))
     return 0

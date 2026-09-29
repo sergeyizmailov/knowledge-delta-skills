@@ -78,7 +78,7 @@ Beneficiary/payer fields asked inside Ads Composer at ad-set level — have regu
 Definition wide: "anything of monetary value as part of a method of entry and prize" — casinos, sportsbooks, poker, bingo, lotteries, fantasy sports, sweepstakes casinos, skill-prize contests.
 Route: Authorizations and Verifications tab, Business Suite — declare operator/aggregator/affiliate role, target territories, exact destination URLs (not free-text email). Proof: current regulator licence per targeted territory. **Approvals attach to specific business portfolio + ad account** — new account needs new approval.
 **Affiliates get no exemption** — a LP referencing real-money play/bonuses/promo codes or redirecting to an operator is a gambling ad; Meta crawls the redirect path.
-Min 18+ (or local legal age), strict geo-fencing. **19 unsupported markets** (no gambling ads, any authorization level) — official, current, named list in `10`. 🔺 [single practitioner source, unverified]: move to A&V tab Jul 2025; 2026-02-23 date for the 19-market list. List confirmed, date not.
+Min 18+ (or local legal age), strict geo-fencing. **19 unsupported markets** (no gambling ads, any authorization level) — official, current, named list in `10`. 🔺 [single practitioner source, unverified]: move to A&V tab Jul 2025; 2026-02-23 date for the 19-market list. List confirmed, date not. (`meta-ads/07` §3 labels the same list [official 2026-09-25]; the transparency page did not render in the 2026-09-29 docs review, so the list is unverified there and the label difference is unresolved.)
 
 ### 4.4 Crypto
 Prior written permission, same A&V tab.

@@ -6,6 +6,10 @@ import os as _os, tempfile as _tempfile
 _os.environ["METAOPS_PACE_DIR"] = _tempfile.mkdtemp(prefix="metaops-pace-test-")
 _os.environ.setdefault("METAOPS_CREATE_GAP_HOURS", "0")
 
+import contextlib
+import io
+import json
+import sys
 import unittest
 from unittest import mock
 
@@ -89,6 +93,76 @@ class SheetFeedTests(unittest.TestCase):
             ])
         sheet.write_header.assert_not_called()
         sheet._post.assert_not_called()
+
+
+HEADER = sheetfeed.REQUIRED + ["gtin"]
+
+
+def good_row(pid: str = "sku-1") -> list[str]:
+    return [pid, "Title", "Desc", "in stock", "new", "19.99 USD", "https://example.com/p",
+            "https://example.com/p.jpg", "Brand", "123"]
+
+
+class SetCommandTests(unittest.TestCase):
+    """`set` edits one field of an EXISTING product and validates the row it would write."""
+
+    def test_unknown_id_is_refused_instead_of_appending_a_junk_row(self) -> None:
+        with self.assertRaisesRegex(sheetfeed.SheetError, "unknown id 'sku-typo'"):
+            sheetfeed.checked_set_item(HEADER, [good_row()], "sku-typo", "title", "New", "meta")
+
+    def test_unknown_field_is_refused_instead_of_adding_a_junk_column(self) -> None:
+        with self.assertRaisesRegex(sheetfeed.SheetError, "unknown field 'titel'"):
+            sheetfeed.checked_set_item(HEADER, [good_row()], "sku-1", "titel", "New", "meta")
+
+    def test_id_column_cannot_be_rewritten(self) -> None:
+        with self.assertRaisesRegex(sheetfeed.SheetError, "cannot change the id"):
+            sheetfeed.checked_set_item(HEADER, [good_row()], "sku-1", "id", "sku-2", "meta")
+
+    def test_known_feed_column_missing_from_the_header_is_allowed(self) -> None:
+        item = sheetfeed.checked_set_item(HEADER, [good_row()], "sku-1", "custom_label_0", "a", "meta")
+        self.assertEqual(item, {"id": "sku-1", "custom_label_0": "a"})
+
+    def test_a_write_that_breaks_the_row_is_refused(self) -> None:
+        with self.assertRaisesRegex(sheetfeed.SheetError, "price must look like"):
+            sheetfeed.checked_set_item(HEADER, [good_row()], "sku-1", "price", "cheap", "meta")
+        with self.assertRaisesRegex(sheetfeed.SheetError, "availability"):
+            sheetfeed.checked_set_item(HEADER, [good_row()], "sku-1", "availability", "maybe", "meta")
+
+    def test_an_unrelated_existing_problem_does_not_block_a_valid_fix(self) -> None:
+        broken = good_row("sku-2")
+        broken[5] = "free"                       # pre-existing bad price on another row
+        item = sheetfeed.checked_set_item(HEADER, [good_row(), broken], "sku-1", "title", "Fixed", "meta")
+        self.assertEqual(item["title"], "Fixed")
+
+    def test_main_never_reaches_upsert_for_an_unknown_id(self) -> None:
+        sheet = mock.Mock()
+        sheet.read.return_value = (HEADER, [good_row()])
+        argv = ["sheetfeed", "--sheet", "x" * 30, "--json", "set", "--id", "nope", "--field", "title",
+                "--value", "v"]
+        out = io.StringIO()
+        with (
+            mock.patch.object(sheetfeed, "Sheet", return_value=sheet),
+            mock.patch.object(sys, "argv", argv),
+            contextlib.redirect_stdout(out),
+        ):
+            code = sheetfeed.main()
+        self.assertEqual(code, 2)
+        sheet.upsert.assert_not_called()
+        self.assertIn("unknown id", json.loads(out.getvalue())["error"]["message"])
+
+    def test_main_upserts_a_valid_set(self) -> None:
+        sheet = mock.Mock()
+        sheet.read.return_value = (HEADER, [good_row()])
+        sheet.upsert.return_value = {"updated": 1, "appended": 0}
+        argv = ["sheetfeed", "--sheet", "x" * 30, "--json", "set", "--id", "sku-1", "--field", "title",
+                "--value", "New"]
+        with (
+            mock.patch.object(sheetfeed, "Sheet", return_value=sheet),
+            mock.patch.object(sys, "argv", argv),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(sheetfeed.main(), 0)
+        self.assertEqual(sheet.upsert.call_args.args[0], [{"id": "sku-1", "title": "New"}])
 
 
 if __name__ == "__main__":

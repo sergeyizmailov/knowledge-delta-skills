@@ -833,6 +833,276 @@ class CmdEditTests(unittest.TestCase):
             self.assertEqual(edit.main(), 1)
         post.assert_not_called()
 
+    # --- exact rename / bid / schedule (cmd_edit + edit.py) -----------------------
+
+    def _run_edit_child(self, argv: list[str], gets: list, posts: list | None = None):
+        posts = posts if posts is not None else [{}]
+        with (
+            mock.patch.object(edit.sys, "argv", ["edit.py", *argv]),
+            mock.patch.object(edit.graph, "require_write_authority"),
+            mock.patch.object(edit.graph, "get", side_effect=gets),
+            mock.patch.object(edit.graph, "post", side_effect=posts) as post,
+        ):
+            code = edit.main()
+        return code, post
+
+    def _run_wrapper(self, argv: list[str], stdout: str = '{"schema": "edit.result/v1", "ok": true}\n'):
+        args = self.parse(argv)
+        with mock.patch.object(metaops, "run_child", return_value=fake_child(stdout)) as run_child:
+            code, payload = args.handler(args)
+        return code, payload, run_child.call_args[0]
+
+    def test_edit_rename_name_builds_args(self) -> None:
+        code, _payload, (_script, child_args, _t) = self._run_wrapper(
+            ["edit", "rename", "--ids", "77", "--name", "EN0039-<buyer>-1"])
+        self.assertEqual(code, 0)
+        self.assertEqual(child_args, ["--ids", "77", "--expected-account", "act_1", "--name", "EN0039-<buyer>-1"])
+
+    def test_edit_rename_name_needs_single_id(self) -> None:
+        args = self.parse(["edit", "rename", "--ids", "1,2", "--name", "X"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def test_edit_rename_set_takes_ids_from_pairs(self) -> None:
+        _c, _p, (_s, child_args, _t) = self._run_wrapper(
+            ["edit", "rename", "--set", "11=EN0039-<buyer>-1", "--set", "22=EN0040-<buyer>-1"])
+        self.assertEqual(child_args, [
+            "--ids", "11,22", "--expected-account", "act_1",
+            "--set", "11=EN0039-<buyer>-1", "--set", "22=EN0040-<buyer>-1"])
+
+    def test_edit_rename_forms_are_exclusive_and_validated(self) -> None:
+        for argv in (
+            ["edit", "rename", "--ids", "1", "--name", "X", "--prefix", "P"],
+            ["edit", "rename", "--ids", "1"],
+            ["edit", "rename", "--set", "notanid=Name"],
+            ["edit", "rename", "--set", "12="],
+            ["edit", "rename", "--set", "12=" + "n" * 401],
+        ):
+            args = self.parse(argv)
+            with self.assertRaises(metaops.MetaOpsError, msg=str(argv)):
+                args.handler(args)
+
+    def test_edit_child_name_posts_exact_name(self) -> None:
+        code, post = self._run_edit_child(
+            ["--ids", "42", "--name", "EN0039-<buyer>-1", "--expected-account", "act_1"],
+            gets=[{"id": "42", "account_id": "1", "name": "EN0038-<buyer>-1", "status": "ACTIVE"},
+                  {"name": "EN0039-<buyer>-1", "status": "ACTIVE", "effective_status": "PENDING_REVIEW"}])
+        self.assertEqual(code, 0)
+        self.assertEqual(post.call_args.args[:2], ("42", {"name": "EN0039-<buyer>-1"}))
+
+    def test_edit_child_set_map_renames_each_id(self) -> None:
+        obj = lambda i: {"id": i, "account_id": "1", "name": f"old{i}", "status": "ACTIVE"}
+        code, post = self._run_edit_child(
+            ["--ids", "11,22", "--set", "11=A-1", "--set", "22=B-2", "--expected-account", "act_1"],
+            gets=[obj("11"), {"name": "A-1", "status": "ACTIVE"}, obj("22"), {"name": "B-2", "status": "ACTIVE"}],
+            posts=[{}, {}])
+        self.assertEqual(code, 0)
+        self.assertEqual([c.args[:2] for c in post.call_args_list], [("11", {"name": "A-1"}), ("22", {"name": "B-2"})])
+
+    def test_edit_child_name_refuses_several_ids(self) -> None:
+        with self.assertRaises(SystemExit):
+            self._run_edit_child(["--ids", "1,2", "--name", "X"], gets=[])
+
+    def test_edit_bid_requires_confirm_and_positive_value(self) -> None:
+        for argv in (["edit", "bid", "--ids", "9", "--bid-minor", "15000"],
+                     ["edit", "bid", "--ids", "9", "--bid-minor", "0", "--confirm", "BID"]):
+            args = self.parse(argv)
+            with self.assertRaises(metaops.MetaOpsError, msg=str(argv)):
+                args.handler(args)
+
+    def test_edit_bid_builds_args(self) -> None:
+        _c, _p, (_s, child_args, _t) = self._run_wrapper(
+            ["edit", "bid", "--ids", "9", "--bid-minor", "15000", "--confirm", "BID"])
+        self.assertEqual(child_args, ["--ids", "9", "--expected-account", "act_1", "--bid-minor", "15000"])
+
+    def test_edit_child_bid_posts_bid_amount_and_reads_it_back(self) -> None:
+        code, post = self._run_edit_child(
+            ["--ids", "9", "--bid-minor", "15000", "--expected-account", "act_1"],
+            gets=[{"id": "9", "account_id": "1", "name": "AS", "status": "ACTIVE", "daily_budget": None},
+                  {"bid_amount": 20000},
+                  {"name": "AS", "status": "ACTIVE", "bid_amount": 15000}])
+        self.assertEqual(code, 0)
+        self.assertEqual(post.call_args.args[:2], ("9", {"bid_amount": 15000}))
+
+    def test_edit_child_bid_on_non_adset_is_refused_before_post(self) -> None:
+        bad = edit.graph.GraphError(400, {"error": {"code": 100, "message": "nonexisting field"}}, "bid")
+        code, post = self._run_edit_child(
+            ["--ids", "9", "--bid-minor", "15000", "--expected-account", "act_1"],
+            gets=[{"id": "9", "account_id": "1", "name": "AD", "status": "ACTIVE"}, bad])
+        self.assertEqual(code, 1)
+        post.assert_not_called()
+
+    def test_edit_schedule_requires_confirm_and_offset(self) -> None:
+        for argv in (
+            ["edit", "schedule", "--ids", "9", "--start-time", "2026-10-01T08:00:00-07:00"],
+            ["edit", "schedule", "--ids", "9", "--start-time", "2026-10-01T08:00:00", "--confirm", "SCHEDULE"],
+            ["edit", "schedule", "--ids", "9", "--confirm", "SCHEDULE"],
+        ):
+            args = self.parse(argv)
+            with self.assertRaises(metaops.MetaOpsError, msg=str(argv)):
+                args.handler(args)
+
+    def test_edit_schedule_builds_args(self) -> None:
+        _c, _p, (_s, child_args, _t) = self._run_wrapper([
+            "edit", "schedule", "--ids", "9", "--start-time", "2026-10-01T08:00:00-07:00",
+            "--end-time", "2026-10-08T00:00:00-07:00", "--confirm", "SCHEDULE"])
+        self.assertEqual(child_args, [
+            "--ids", "9", "--expected-account", "act_1", "--start-time", "2026-10-01T08:00:00-07:00",
+            "--end-time", "2026-10-08T00:00:00-07:00"])
+
+    def test_edit_child_schedule_posts_times_and_refuses_past_end(self) -> None:
+        code, post = self._run_edit_child(
+            ["--ids", "9", "--start-time", "2099-10-01T08:00:00-07:00", "--expected-account", "act_1"],
+            gets=[{"id": "9", "account_id": "1", "name": "AS", "status": "PAUSED"},
+                  {"optimization_goal": "OFFSITE_CONVERSIONS"},  # ad-set probe (schedule is ad-set only)
+                  {"name": "AS", "status": "PAUSED", "start_time": "2099-10-01T08:00:00-0700"}])
+        self.assertEqual(code, 0)
+        self.assertEqual(post.call_args.args[:2], ("9", {"start_time": "2099-10-01T08:00:00-07:00"}))
+        with self.assertRaises(SystemExit):
+            self._run_edit_child(["--ids", "9", "--end-time", "2020-01-01T00:00:00+00:00"], gets=[])
+
+    # --- targeting: age / gender / device / geo / audience -------------------------
+
+    def test_edit_targeting_new_flags_build_args_including_zero(self) -> None:
+        _c, _p, (_s, child_args, _t) = self._run_wrapper([
+            "edit", "targeting", "--ids", "5", "--age-min", "21", "--geo-regions", "3879",
+            "--advantage-audience", "0", "--device-platforms", "mobile", "--confirm", "TARGETING"],
+            stdout='{"schema": "edit_targeting.result/v1", "ok": true}\n')
+        for flag, value in (("--age-min", "21"), ("--geo-regions", "3879"),
+                            ("--advantage-audience", "0"), ("--device-platforms", "mobile")):
+            self.assertEqual(child_args[child_args.index(flag) + 1], value)
+
+    def _run_targeting_child(self, argv: list[str], current: dict):
+        # The read-back echoes what was POSTed, like Graph does when it accepts every field
+        # (edit_targeting now compares the read-back with the request and flags `not_applied`).
+        sent: dict = {}
+
+        def fake_post(_oid, payload, **_kw):
+            sent.update(payload)
+            return {}
+
+        def fake_get(_oid, **kw):
+            if kw["params"]["fields"] == "name,targeting,account_id":
+                return {"id": "5", "name": "AS", "targeting": current, "account_id": "1"}
+            return {"id": "5", "name": "AS", "targeting": sent.get("targeting", current)}
+
+        with (
+            mock.patch.object(edit_targeting.sys, "argv", ["edit_targeting.py", *argv]),
+            mock.patch.object(edit_targeting.graph, "require_write_authority"),
+            mock.patch.object(edit_targeting.graph, "get", side_effect=fake_get),
+            mock.patch.object(edit_targeting.graph, "post", side_effect=fake_post) as post,
+        ):
+            code = edit_targeting.main()
+        return code, post
+
+    def test_edit_targeting_child_geo_regions_replaces_whole_geo_selection(self) -> None:
+        current = {"geo_locations": {"countries": ["US"], "regions": [{"key": "3879"}],
+                                     "location_types": ["home", "recent"]}, "age_min": 21}
+        code, post = self._run_targeting_child(
+            ["--ids", "5", "--geo-regions", "3880,3881", "--confirm", "TARGETING", "--expected-account", "act_1"],
+            current)
+        self.assertEqual(code, 0)
+        sent = post.call_args.args[1]["targeting"]
+        self.assertEqual(sent["geo_locations"], {"regions": [{"key": "3880"}, {"key": "3881"}],
+                                                 "location_types": ["home", "recent"]})
+        self.assertEqual(sent["age_min"], 21)
+
+    def test_edit_targeting_child_advantage_audience_keeps_sibling_automation_keys(self) -> None:
+        current = {"geo_locations": {"regions": [{"key": "3879"}]},
+                   "targeting_automation": {"advantage_audience": 1, "individual_setting": {"age": 1}}}
+        code, post = self._run_targeting_child(
+            ["--ids", "5", "--advantage-audience", "0", "--age-max", "60", "--confirm", "TARGETING",
+             "--expected-account", "act_1"], current)
+        self.assertEqual(code, 0)
+        sent = post.call_args.args[1]["targeting"]
+        self.assertEqual(sent["targeting_automation"], {"advantage_audience": 0, "individual_setting": {"age": 1}})
+        self.assertEqual(sent["age_max"], 60)
+
+    def test_edit_targeting_child_rejects_out_of_range_age(self) -> None:
+        with self.assertRaises(SystemExit):
+            self._run_targeting_child(
+                ["--ids", "5", "--age-min", "9", "--confirm", "TARGETING"], {"geo_locations": {}})
+
+    # --- creative / ad copy through edit tags|creative -----------------------------
+
+    def test_edit_creative_alias_and_copy_flags_build_args(self) -> None:
+        msg = self.root / "text.txt"
+        msg.write_text("Hello story\n", encoding="utf-8")
+        _c, _p, (script, child_args, _t) = self._run_wrapper([
+            "edit", "creative", "--ids", "7", "--message-file", str(msg), "--description", "",
+            "--caption", "example.com", "--link", "https://x.example/", "--image-hash", "abc",
+            "--allow-disapproved", "--confirm", "CREATIVE"],
+            stdout='{"schema": "edit_tags.result/v1", "ok": true}\n')
+        self.assertEqual(script, "edit_tags.py")
+        self.assertEqual(child_args, [
+            "--ids", "7", "--message-file", str(msg.resolve()), "--description", "", "--caption", "example.com",
+            "--link", "https://x.example/", "--image-hash", "abc", "--allow-disapproved",
+            "--confirm", "TAGS", "--expected-account", "act_1"])
+
+    def test_edit_creative_missing_message_file_is_refused(self) -> None:
+        args = self.parse(["edit", "creative", "--ids", "7", "--message-file", str(self.root / "nope.txt"),
+                           "--confirm", "TAGS"])
+        with self.assertRaises(metaops.MetaOpsError):
+            args.handler(args)
+
+    def _link_ad(self, status: str = "ACTIVE") -> dict:
+        return {"id": "77", "name": "Ad", "account_id": "1", "effective_status": status,
+                "creative": {"id": "500", "name": "C", "url_tags": "sub1=OLD",
+                             "object_story_spec": {"page_id": "2", "link_data": {
+                                 "link": "https://old.example/", "message": "old text", "name": "Old head",
+                                 "description": "old desc", "caption": "old.example", "image_hash": "h1",
+                                 "picture": "https://cdn/x.jpg",
+                                 "call_to_action": {"type": "LEARN_MORE", "value": {"link": "https://old.example/"}}}}}}
+
+    def _run_tags_child(self, argv: list[str], ad: dict):
+        with (
+            mock.patch.object(edit_tags.sys, "argv", ["edit_tags.py", *argv]),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", side_effect=[ad, {"name": "Ad", "creative": {"id": "600"}}]),
+            mock.patch.object(edit_tags.graph, "post", side_effect=[{"id": "600"}, {}]) as post,
+        ):
+            code = edit_tags.main()
+        return code, post
+
+    def test_edit_tags_child_rewrites_ad_copy_on_the_clone(self) -> None:
+        msg = self.root / "new.txt"
+        msg.write_text("new story\n", encoding="utf-8")
+        code, post = self._run_tags_child(
+            ["--ids", "77", "--message-file", str(msg), "--headline", "New head", "--description", "",
+             "--caption", "new.example", "--link", "https://new.example/", "--image-hash", "h2",
+             "--cta", "SEE_DETAILS", "--confirm", "TAGS"], self._link_ad())
+        self.assertEqual(code, 0)
+        ld = post.call_args_list[0].args[1]["object_story_spec"]["link_data"]
+        self.assertEqual(ld["message"], "new story")
+        self.assertEqual(ld["name"], "New head")
+        self.assertNotIn("description", ld)
+        self.assertEqual(ld["caption"], "new.example")
+        self.assertEqual(ld["link"], "https://new.example/")
+        self.assertEqual(ld["call_to_action"], {"type": "SEE_DETAILS", "value": {"link": "https://new.example/"}})
+        self.assertEqual(ld["image_hash"], "h2")
+        self.assertNotIn("picture", ld)
+        self.assertEqual(post.call_args_list[0].args[1]["url_tags"], "sub1=OLD")
+
+    def test_edit_tags_child_skips_disapproved_unless_allowed(self) -> None:
+        with (
+            mock.patch.object(edit_tags.sys, "argv",
+                              ["edit_tags.py", "--ids", "77", "--headline", "H", "--confirm", "TAGS"]),
+            mock.patch.object(edit_tags.graph, "require_write_authority"),
+            mock.patch.object(edit_tags.graph, "get", return_value=self._link_ad("DISAPPROVED")),
+            mock.patch.object(edit_tags.graph, "post") as post,
+        ):
+            self.assertEqual(edit_tags.main(), 0)
+        post.assert_not_called()
+        code, post = self._run_tags_child(
+            ["--ids", "77", "--headline", "H", "--allow-disapproved", "--confirm", "TAGS"],
+            self._link_ad("DISAPPROVED"))
+        self.assertEqual(code, 0)
+        self.assertEqual(post.call_args_list[0].args[1]["object_story_spec"]["link_data"]["name"], "H")
+
+    def test_edit_tags_child_refuses_blank_message(self) -> None:
+        with self.assertRaises(SystemExit):
+            self._run_tags_child(["--ids", "77", "--message", "   ", "--confirm", "TAGS"], self._link_ad())
+
     # --- rules -------------------------------------------------------------
 
     def test_rules_ladder_pause_requires_confirm(self) -> None:
@@ -889,7 +1159,7 @@ class CmdEditTests(unittest.TestCase):
     def test_rules_ladder_pause_with_confirm_passes(self) -> None:
         args = self.parse([
             "rules", "ladder", "--target-minor", "1200", "--event", "results", "--level", "ADSET",
-            "--mode", "pause", "--confirm", "RULES",
+            "--mode", "pause", "--ids", "42", "--confirm", "RULES",  # a pause ladder needs a scope
         ])
         with mock.patch.object(
             metaops, "run_child",

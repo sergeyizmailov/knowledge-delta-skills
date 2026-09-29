@@ -1,6 +1,8 @@
 # Meta Advertising Policies & Account Health (2025–2026)
 
-Reviewed 2026-07-22. Legitimate compliance only.
+Reviewed 2026-07-22 (lane caveats added 2026-09-29). Legitimate compliance only.
+
+**Lane caveat (operator rule):** this file describes the clean-lane remedy (fix, appeal, request review, resubmit). On the operator's own BM, **on an ad disapproval do not edit or resubmit**: switch the ad off, leave it, report; account-level appeals are the operator's/TL's decision (`meta-grey-ops/23`, `05`).
 
 Naming: policy book = **Meta Advertising Standards** (transparency.meta.com/policies/ad-standards/), not Business Help Center. **Account Quality** = **Business Support Home** (business.facebook.com/business-support-home); facebook.com/accountquality still resolves — same surface, old name in pre-2024 articles.
 
@@ -109,7 +111,7 @@ Rejection email is generic — real reason is in Ads Manager → hover "Not deli
 
 | Category | Triggers | First fix |
 |---|---|---|
-| Advertising Standards violation | Repeated/severe violations; restricted category run without permission; undeclared special ad category | Fix/remove offending ads, then appeal |
+| Advertising Standards violation | Repeated/severe violations; restricted category run without permission; undeclared special ad category | Fix/remove offending ads, then appeal (operator lane: switch ads off, no edit or resubmit) |
 | Business/payment verification | Required verification incomplete; billing can't be validated | Complete verification, resolve billing |
 | Unusual/suspicious activity | Login anomalies, possible compromise, sudden behavior change | Secure account, confirm identity, 2FA |
 | Circumventing systems | Evading review/prior enforcement — cloaking or replacement assets | Clean lane: stop workaround, preserve evidence, fix root issue, use supported review route. Grey execution → `meta-grey-ops` |
@@ -125,7 +127,7 @@ Behavioral/structural: sudden spend/login change can coincide with risk review b
 
 ## 8. Appeals: Business Support Home flow
 
-Path: Business Support Home → Account status overview → select restricted account/asset → reason → "What you can do." Also facebook.com/accountquality. Rejected ad: Ads Manager → rejected ad → request review, or same path via Business Support Home.
+Path: Business Support Home → Account status overview → select restricted account/asset → reason → "What you can do." Also facebook.com/accountquality. Rejected ad: Ads Manager → rejected ad → request review, or same path via Business Support Home (clean lane only; operator lane: no ad-level review request, no edit, no resubmit).
 
 Four remediation paths (by cause): (1) confirm identity (email/phone/ID/payment proof); (2) complete verification ("Start verification"); (3) enable 2FA ("Secure your account"); (4) request review (formal appeal).
 

@@ -1,6 +1,6 @@
 # 06 — Portfolio forensics (why accounts die, attributed)
 
-Reviewed 2026-08-28. **Method, not measurement.** Standard survival analysis; no
+Reviewed 2026-08-28; tr-1 fingerprint added 2026-09-29. **Method, not measurement.** Standard survival analysis; no
 figure here is Meta-sourced or benchmarked, none is meant to be quoted as one.
 
 `senior-buyer-ops/01` says "diagnose which cause" for a ban-rate spike. HOW: turn
@@ -61,7 +61,12 @@ re-diagnosis. FIELD 2026-09-27: single account disabled ~6h after its heaviest A
 weakest account in the set ($43 lifetime, $2 billing threshold, 21 micro-charges); UI reason = Account Integrity
 "created or used with an automation that doesn't follow our rules" (`disable_reason` 1). Sibling accounts on the
 same SU token/page/domain with lighter API load survived. Cause NOT proven (same reason hits manual advertisers and
-whole agency lines, `02` §8) → pacing adopted anyway (`00` §5). Distinct fingerprints: instant day-0 disable across a batch
+whole agency lines, `02` §8) → pacing adopted anyway (`00` §5). FIELD 2026-09-29 (n=1, cause not
+proven): tr-1 (own BM, 30-day-old account, ~$360 lifetime) — 1 CBO campaign, 3 image ads approved, then each
+DISAPPROVED "Spam" within 1-2 min, account `status 2` / `disable_reason 1` 2 min after the third, ~$9 billed,
+$0 ad spend; API load was light (one campaign, then a code-17 throttle after the disable). This is not the
+la595 burst-plus-retry-storm shape; suspects (none tested): shared origin (card/Page/pixel with
+siblings), campaign name and headline carrying the casino name, a Page with 0 fans. Distinct fingerprints: instant day-0 disable across a batch
 (supply/verification); gradual CPM climb then death (creative heat/policy drift);
 simultaneous checkpoint across one subnet (proxy cluster/geo-mismatch);
 single-domain collapse to ~0 LP CTR (domain/SSL/cloak fault, not a ban —

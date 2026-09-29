@@ -53,7 +53,9 @@ Platform lanes are not interchangeable — Meta counts through CAPI, Google thro
 - Work only on YOUR campaign IDs; every call carries a campaign filter. Other
   buyers' campaigns are read-never-touch.
 - No cost push = no CPL/ROI (report cost is 0 — or fake: CPA/CPS cost model
-  with auto ON adds fixed cost per conversion, 01). Overwriting a period is
+  with auto ON adds fixed cost per conversion, 01). Push daily, keyed on ids
+  (`ad_campaign_id` / `sub_id_6`), in the ad account's tz and currency: `metaops keitaro push` (dry run first,
+  then `--confirm PUSH`; 01). Overwriting a period is
   idempotent, but cost lands only on clicks matching range+filters — reconcile
   source spend vs tracker cost after each push.
 - API keys are write-once; store verbatim in gitignored notes.

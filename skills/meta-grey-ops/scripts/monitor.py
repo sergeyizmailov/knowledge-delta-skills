@@ -17,6 +17,13 @@ Verdicts it prints (never acts on):
   SILENT_STOP      was spending yesterday, ~0 today past mid-day → ASL cap, billing hold,
                    throttle or a restriction not yet surfaced as status
   REJECTS          DISAPPROVED ads present → new ads, do not fight (2490468)
+  ISSUES           WITH_ISSUES ads or ad sets carrying issues_info
+  STALL            ACTIVE ad set with impressions and 0 clicks today (04)
+  ASL_HIT          amount_spent reached the account spend cap
+  UNREACHABLE      the account itself could not be read - nothing below applies
+  ERROR            the account read fine but a later call failed mid-sweep (spend / ads / ad sets):
+                   the counts in that row are PARTIAL, so it is never reported OK. It sits beside
+                   any real verdict found on the data that did load (REJECTS,ERROR) and exits 1
   OK
 
 Every row is appended to --log as JSONL with a UTC timestamp: that log is what makes the
@@ -146,7 +153,11 @@ def sweep(account: str, stall_min: int = STALL_MIN_IMPRESSIONS) -> dict:
         row["adset_issues"] = adset_issues(account)
         row["stalled_adsets"] = stalled(adset_delivery(account), stall_min)
     except graph.GraphError as e:
+        # Partial data: whatever loaded before the failure stays in the row, but the row can no
+        # longer claim OK (a missing "ads" block reads as "no rejects").
         row["error"] = str(e)
+        row["code"] = e.code
+        row["subcode"] = e.subcode
 
     hour = local_hour(acct.get("timezone_offset_hours_utc"))
     verdicts = []
@@ -172,6 +183,8 @@ def sweep(account: str, stall_min: int = STALL_MIN_IMPRESSIONS) -> dict:
             verdicts.append("ASL_HIT")
     except (TypeError, ValueError):
         pass
+    if row.get("error"):
+        verdicts.append("ERROR")
     row["verdict"] = ",".join(verdicts) or "OK"
     return row
 
@@ -195,6 +208,8 @@ def main() -> int:
             print(f"{acct:<20} {row.get('status_label', '?'):<18} y={row.get('spend_yesterday', '-'):<9} "
                   f"t={row.get('spend_today', '-'):<9} rej={ads.get('DISAPPROVED', 0)} "
                   f"issues={ads.get('WITH_ISSUES', 0)}  → {row['verdict']}")
+            if row.get("error"):
+                print(f"    ! sweep incomplete, counts above are partial: {row['error']}")
     with open(args.log, "a", encoding="utf-8") as fh:
         for row in rows:
             fh.write(graph.redact(json.dumps(row, default=str)) + "\n")
@@ -202,11 +217,16 @@ def main() -> int:
         with open(args.json, "w", encoding="utf-8") as fh:
             fh.write(graph.redact(json.dumps(rows, indent=2, default=str)))
     bad = [r for r in rows if r["verdict"] != "OK"]
+    errored = [r for r in rows if "ERROR" in r["verdict"].split(",") or r["verdict"] == "UNREACHABLE"]
     print(f"\n{len(rows)} account(s), {len(bad)} need attention. Log → {args.log}")
+    if errored:
+        print(f"{len(errored)} account(s) ERROR/UNREACHABLE: {', '.join(r['account'] for r in errored)} "
+              f"- the sweep did not finish there, re-run before trusting their counts.")
     if bad:
         print("DISABLED → document + replace (03). UNSETTLED → topup. SILENT_STOP → check ASL, "
               "billing, review; touch nothing else. REJECTS → new ads, never re-enable. "
-              "STALL → swap creative angle on the listed ad sets (04).")
+              "STALL → swap creative angle on the listed ad sets (04). "
+              "ERROR/UNREACHABLE → API failed mid-sweep: partial data, re-run.")
     return 1 if bad else 0
 
 

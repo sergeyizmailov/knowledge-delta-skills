@@ -1,7 +1,7 @@
 # 00 — Launch runbook (start here for any API launch)
 
 Ordered path "have a token" → "spending". Other files are exception handlers for one step — if a
-step passes, move on. Reviewed 2026-09-02; ACTIVE-default 2026-09-25.
+step passes, move on. Reviewed 2026-09-29; ACTIVE-default 2026-09-25.
 
 `metaops` (`16`) is the only agent-facing Graph write interface; `../scripts/` are internal and
 reject direct writes. **Never hand-assemble a Graph payload** — agent writes the JSON spec,
@@ -13,6 +13,14 @@ metaops --workspace . --profile <name> --json assets verify --scope core
 # Use --scope all when the spec contains any catalog_* creative.
 metaops --workspace . --profile <name> --json doctor
 ```
+
+Receipts (doctor, assets verify): the 24 h TTL now applies only to `apply`, `bulk-apply`, `activate`,
+`bulk-activate`; `media`, `edit status`, `verify`, `review`, `insights` still check the binding but ignore
+age (`METAOPS_DOCTOR_MAX_AGE_SECONDS` overrides); `assets set-products` also needs a fresh (<24 h)
+receipt like `apply`. A DEFINITE failure of `doctor` deletes its receipt; a failed `assets verify` deletes
+the same-scope receipt (the core one too on a core failure). A local cooldown, a throttle
+(17/613/4/32/80xxx) or an unknown-outcome error does NOT delete a passing receipt. `apply` refuses an
+account whose `account_status` != 1; `plan` / `--dry-run` only WARN about it.
 
 ```
 0 gate  →  1 access  →  2 media  →  3 spec  →  4 dry run  →  7 review layer + 7.5 QA
@@ -32,7 +40,7 @@ it whenever a review window before spend is needed (e.g. `9.7` catalog swap).
 
 | Vertical | Gate before spend | Payout event | First optimization event | Playbook |
 |---|---|---|---|---|
-| iGaming / casino | A&V gambling authorization + per-territory licence, filed **before any ad exists**; 19 markets take no gambling ads | FTD (or qualified FTD) | `COMPLETE_REGISTRATION`, switch to `PURCHASE` at ~20-30 FTD | `playbooks/casino.md` |
+| iGaming / casino | A&V gambling authorization + per-territory licence, filed **before any ad exists**; 19 markets take no gambling ads | FTD (or qualified FTD) | `COMPLETE_REGISTRATION`, switch to `PURCHASE` at ~20-30 FTD (generic prior; our US PWA team runs `PURCHASE` + bid cap from day one, agreed with the TL 24/09, n=1 read in `casino.md`) | `playbooks/casino.md` |
 | Nutra | Health-claim policy | Confirmed COD order | `LEAD` / `PURCHASE` | `playbooks/nutra.md` |
 | Crypto / trading | Crypto authorization; exemption boundary decides if there is a path | Qualified reg / deposit | `COMPLETE_REGISTRATION` | `playbooks/crypto-trading.md` |
 | News → Telegram | No formal gate; funnel is the risk | Subscribe / bot join | `LEAD` | `playbooks/news-tg.md` |
@@ -57,15 +65,18 @@ export META_PROXY='socks5h://user:pass@host:port'      # when this BM uses a fix
 export META_ALLOW_NO_PROXY=1
 export META_APP_SECRET='...'                          # optional; adds appsecret_proof
 metaops --workspace . --json doctor --whoami
-metaops --workspace . --profile <name> --json doctor    # PBIA absent = WARN; create it in the UI (18)
+metaops --workspace . --profile <name> --json doctor    # PBIA absent = WARN here, but launch.py aborts on it; create it in the UI (18)
 ```
 
 Exit 0 or don't launch. Gates: token identity · granted scopes (`ads_management`+`ads_read`
 required, rest warned) · account in `/me/adaccounts` (assigned, not merely readable) · status +
-funding · Page token + PBIA/IG (non-blocking since 2026-09-22, `18`) · **pixel attached to THIS
+funding · Page token + PBIA/IG (doctor WARN only since 2026-09-22, but IG is mandatory so
+`launch.py` refuses without it, `18`) · **pixel attached to THIS
 ad account** (shared to BM ≠ on account, 1815045) · CAPI write · `validate_only` write. A `GET`
 proves none of these. Bulk planning validates every selected profile before any build.
-Token died / access denied → `02`. Asset not visible → `03`.
+Token died / access denied → `02`. Asset not visible → `03`. No proxy: under `metaops` only workspace
+`defaults.allow_no_proxy: true` works (an exported `META_ALLOW_NO_PROXY=1` is dropped). Building the BM
+itself → `22`.
 
 ## 2 — Media
 
@@ -92,6 +103,25 @@ template hitting a TWD/JPY account at 100x).
 | `catalog_collection` | storefront hero + product set, **≥4 items** (2490457) | `example-catalog-collection-tr.json` |
 | `catalog_single` | one-product set → one deep-linked card (`force_single_link`), no minimum | `example-catalog-single.json` |
 | `catalog_carousel` | multi-product carousel from the set (no `force_single_link`; Meta picks the card count), no documented minimum; `multi_share_end_card` default false | adapt `example-catalog-single.json` |
+
+**Link ads (longread) copy:** set `headline` (neutral, ≤40 chars, never the casino name), `cta`
+(`SEE_DETAILS`: the launch.py default is `LEARN_MORE`; SEE_DETAILS verified live on CF1 ads via API
+2026-09-29), `display_link` (empty or root domain; not on `link_video`: no caption field there, error in strict),
+`description` empty or neutral, and top-level `"lint": "strict"` (headline >40 / offer or casino words in
+headline+description = error; strict also needs non-empty headline and message; body is not linted).
+Campaign / ad set / ad names: no casino name (not linted, check by hand). Template:
+`scripts/specs/example-us-longread-cbo.json` (US, CBO, bid cap, 7d click / 1d view, `fb_ig_all`,
+`advantage_audience: false`, region key placeholder).
+
+**Placements:** set ad set `placements: "fb_ig_all" | "fb_ig_feeds"` (`SKILL.md`), or explicit
+`publisher_platforms` + positions (`fb_ig_all` also sets `device_platforms: ["mobile"]`). Omitted = `plan`
+WARNING and `verify` WARNING (FAIL under `lint: "strict"`). **Bids:** conversion
+goals need a cap; `bid_policy: "require_cap"` makes a missing cap a load error; `daily_min_spend_target` /
+`daily_spend_cap` are minor units; `advantage_audience` must be a real bool or 0/1. The `plan` JSON
+envelope carries `data.warnings`: read them (uncapped conversion goal, PURCHASE without explicit
+`attribution`, omitted `publisher_platforms`, non-active account, lint findings).
+Reused campaign (`campaign.id`): ad sets are created PAUSED and each is activated after its ads exist
+(state key `adsets_activated`).
 
 All `catalog_*`: `message` default `-----` (a wordy one refused unless `allow_message`), headline /
 description default `{{product.name}}` / `{{product.description}}` (any `{{product.*}}` tag accepted,
@@ -155,12 +185,17 @@ metaops --workspace . --json bulk-apply \
   account, never sleep-and-retry (Limited tier ≈300 calls/h/account, `04`). Weak/new account:
   open below target budget, consider the first launch in Ads Manager UI.
 - State `.metaops/<run_id>.json` marks each create in-flight **before** the POST. Dropped
-  connection → never retried (may have applied); next run asks to reconcile. Graph *rejection*
+  connection → never retried (may have applied); next run asks to reconcile. `graph.py` retries transient
+  errors only for GETs and `idempotent=True` calls; a non-idempotent create raises once with
+  `outcome_unknown=true` (`graph_error` reports the LAST error, int `code`). Every Graph path is validated
+  first (`.`, `..`, empty segments, `% ? # \`, whitespace/control characters are rejected). Graph *rejection*
   clears the marker, retryable. Resume = the same `apply`; if the spec `start_time` has passed
   meanwhile, add `--refresh-start <future ISO>` (re-dates only missing ad sets; no new plan). No
   `--rollback`: pause (`edit status --confirm PAUSE`); `--status DELETED --confirm DELETE` removes any object, spend included (insights stay in account reports).
-- Bulk: substitutes account/page/pixel/IG per row, expands `{tag}` in names (campaign name =
-  account code is the tracker contract, `03`), deep-merges `overrides`, per-account `media`,
+- Bulk: substitutes account/page/pixel/IG per row, expands `{tag}` in names (naming contract: `03`;
+  no casino names), deep-merges `overrides`, per-account `media`
+  (keys `"<adset index>:<expanded ad name>"` or `"<expanded ad name>"`; misses and shared names are
+  warned; the media manifest is merged, not overwritten),
   resolved specs in `.metaops/bulk/<run>/`, own state per account. One failure doesn't stop the
   rest. Re-run resumes, never duplicates.
 
@@ -176,11 +211,15 @@ only Ads Manager can tell) or any spec ad set/ad missing from `objects`. Reconci
 
 Diffs read-back: ad set/ad `status`, DLO rules/locales/text, budget in minor units (campaign
 under CBO, ad set under ABO), bid strategy, optimization goal, promoted object, targeting,
-**attribution_spec**, **DSA fields**, destination per kind, **display URL**
-(`object_story_spec.link_data.caption`; MCP `display_link`, `15`) matching Website URL domain
-(`07`), `template_url_spec`, **`contextual_multi_ads` = OPT_OUT**, **no Advantage+ feature
-OPT_IN**, every `effective_status`. Graph silently ignores unknown JSON keys and fills enum
-defaults. MCP-created objects (`02` §6) never passed `verify` — diff them here too.
+**attribution_spec**, **DSA fields**, destination per kind, **display link**
+(`object_story_spec.link_data.caption`; MCP `display_link`, `15`), description, `conversion_domain`
+(verify.py diffs these since 2026-09-29; before that it did NOT diff caption, despite this section),
+`template_url_spec`, **`contextual_multi_ads` = OPT_OUT**, **no OPT_IN in `degrees_of_freedom_spec` or
+`creative_sourcing_spec` unless `creative.opt_in_features` lists it**, **`publisher_platforms`**
+(FAILS if a pinned platform is missing or AN / Messenger / Threads appear that the spec did not list;
+positions are compared only when the spec/preset listed them; a spec that never pinned placements
+only WARNS unless `lint: "strict"`) and **`instagram_user_id` on every ad**, every `effective_status`.
+Booleans compare as true/false/1/0. Graph silently ignores unknown JSON keys and fills enum defaults. MCP-created objects (`02` §6) never passed `verify` — diff them here too.
 
 Run immediately after ACTIVE create; on mismatch pause the tree first (`edit status --ids …
 --status PAUSED --confirm PAUSE`), diagnose second (`00` §9).
@@ -203,8 +242,8 @@ All before `apply --confirm SPEND` (under the PAUSED override: before `activate`
 - One real click through redirect → Keitaro → event fire (`senior-buyer-ops/03`).
 - Naming matches tracking plan — wrong name breaks tracker split silently
   (`senior-buyer-ops/SKILL.md` contract #6, `tracker-ops/03`).
-- Domain/SSL, macros, display URL (`caption`) re-verified — drift won't show in `verify`
-  (`senior-buyer-ops/03`; `07`).
+- Domain/SSL and macros re-verified (`senior-buyer-ops/03`; `07`). The display link itself is diffed
+  by `verify` now, but whether it names the casino is a human check.
 - Final IDs, URLs, subs, settings written to `.notes/`.
 
 ## 8 — Activate (create_status: PAUSED runs only)
@@ -225,7 +264,8 @@ metaops --workspace . --profile <name> --json bulk-activate \
 ```
 
 No activate-all. A past `start_time` doesn't error — it starts immediately in dead hours, so
-refresh it. Ads/ad sets first, campaign last; stops on first failure. Confirm with operator:
+refresh it. `--refresh-start` records `start_overrides` in the state: re-run `verify` before a
+second `activate`. Ads/ad sets first, campaign last; stops on first failure. Confirm with operator:
 budget in **major units + currency**, schedule, destination, creatives, UI multi-advertiser
 check, `verify` exit 0 on this exact state (`<state>.verified.json` holds state + spec hash;
 refused if state changed, receipt made without `--spec`, or different spec).
@@ -238,7 +278,8 @@ refused if state changed, receipt made without `--spec`, or different spec).
   before touching (`05`).
 - Rejected ad cannot be enabled (2490468) — switch it off; a new ad needs a different
   creative/angle/PWA. Never re-upload the rejected one into the same account (reads as
-  circumvention, FIELD 2026-09-27).
+  circumvention, FIELD 2026-09-27). **Operator rule: on a disapproval do not edit or resubmit.**
+  Several ads going DISAPPROVED ("Spam") within minutes of approval, or an account-level notice → `23`.
 - `account_status` 3 / "Payment needed" = billing, not a ban; clears once the card charges.
   `balance` = unbilled amount in cents, not prepaid money (FIELD 2026-09-27).
 - **Budget/billing anomaly: pause first, diagnose second** (2026: a 100x budget kept spending
@@ -248,15 +289,19 @@ refused if state changed, receipt made without `--spec`, or different spec).
 
 ```bash
 metaops … review --state .metaops/run.json            # ad_review_feedback / issues_info; exit 1 on rejects
+metaops … review --tree                               # campaign > ad sets > ads in one read (status, budget, bid, attribution, targeting, feedback)
 metaops … monitor --accounts accounts.json --telegram   # status + spend sweep, STALL (≥40 impr, 0 clicks), survival log, TG alerts
-metaops … rules ladder --target-minor 1200 --event … --level ADSET --mode pause --confirm RULES
-metaops … edit budget --ids … --budget-pct +20 --confirm SPEND · edit status --ids … --status PAUSED --confirm PAUSE · clone campaign <id> --times 2
+metaops … rules ladder --target-minor 1200 --event … --level ADSET --mode pause --ids … --confirm RULES   # pause mode needs --ids or --all-adsets
+metaops … edit budget --ids … --budget-pct +20 --confirm SPEND · edit status --ids … --status PAUSED --confirm PAUSE · clone campaign <id> --times 2   # --times N: 3 h create pacing
+metaops … edit rename --set ID=NAME · edit bid --bid-minor N --confirm BID · edit schedule --end-time ISO+offset --confirm SCHEDULE   # full list and review effects: 16
 metaops … comments hide --all --matching "scam|fake" --confirm HIDE
 metaops … insights pull --level ad --date-preset yesterday --csv day.csv · insights leaderboard --accounts accounts.json
 metaops … insights fatigue --event offsite_conversion.fb_pixel_lead   # weekly per-ad creative-fatigue sweep (meta-ads/08 §10), notify only
 ```
 
-UI-only: appeals (appeal-or-replace is the TL/agency's call, `05`), billing, BM/Page creation. Ladder math → `senior-buyer-ops/04`.
+UI-only: appeals (appeal-or-replace is the TL/agency's call, `05`), billing (the billing threshold can be
+neither read nor set via API, UI only), BM/Page creation. Ladder math → `senior-buyer-ops/04`.
+A `monitor` sweep that hits a GraphError adds an `ERROR` verdict and exits non-zero.
 
 ## 9.5 — Daily sync
 
@@ -265,10 +310,16 @@ metaops --workspace . --profile <name> --json insights pull \
   --level ad --date-preset yesterday --csv .metaops/day.csv
 ```
 
-Rows in account timezone, window explicit (1d/1d; Meta default 7d click) — pass the ad set's
-own window for 7d-click sets (`21`). Push spend as cost to tracker (`tracker-ops/01` Cost push:
-account currency as-is incl. EUR; a day with spend but no clicks stores nothing; CPA-auto cost
-model adds fake cost) — no push = no CPL. Hand-verify one day first.
+Rows in account timezone (`date_preset=yesterday` = the account's yesterday). `insights pull` defaults to
+1d click / 1d view, not the 7d-click window casino ad sets optimise on. To read the ad set's own window,
+look at `attribution_spec` in `metaops review --tree` (CLICK_THROUGH / VIEW_THROUGH days; null = account
+default) and pass it: `--action-attribution-windows 7d_click,1d_view` (7d/28d view were dropped 2026-01-12,
+refused locally). Placement / geo splits: `--breakdown … --time-increment all_days` (`16` Inspect, `25`).
+FB conversions stay indicative; spend, which is what the cost push uses, is window-independent. Push spend as cost to tracker (`tracker-ops/01` Cost push: account currency and
+account tz as-is; key on `ad_campaign_id` / `sub_id_6`, not names; a day with spend but no clicks stores
+nothing; CPA-auto cost model adds fake cost) — no push = no CPL. **`metaops keitaro push`** does it (dry run by default, `--confirm PUSH` writes; `16` Keitaro): per ad and day, key `sub_id_6`,
+account tz and currency, trailing 3 days re-pushed; `keitaro report` joins spend with regs/deps per ad. Dry-run it first, read the
+no-click and delta flags, then push.
 
 ## 9.7 — Post-approval swap (catalog/creative funnels)
 
@@ -282,7 +333,7 @@ the white→target change is made:
 
 | strategy | swap with | gate |
 |---|---|---|
-| one white product per set (`catalog_single`, operator standard) | `assets swap --map a1=T01` | ads on that set |
+| one white product per set (`catalog_single`, the operator standard) | `assets swap --map a1=T01` | ads on that set |
 | several products per set (carousel / collection ≥ 4) | `assets swap --map a1=T01+T02+T03+T04` | same + COLLECTION min 4 |
 | same retailer ids, item content replaced (sheet feed) | `feed swap --confirm FEED` | ads on sets holding those ids + rule-based sets |
 | same, API catalog | `catalog products batch --method UPDATE --confirm BATCH` | same as feed swap |
@@ -307,7 +358,10 @@ click date (`tracker-ops/03`); small-sample math → `senior-buyer-ops/04`.
 | Token died / 190, scopes missing, "not visible to token" | `02` |
 | Asset shared to BM but absent on account | `03` (pixel/page assignment) |
 | Account restricted, checkpoint, session killed | `01` freeze protocol |
-| Rejected creative, review not passing | `07` |
+| Account DISABLED, or ads "Spam"-rejected right after approval | `23` |
+| Launching by hand in Ads Manager | `24` |
+| Which placements to keep | `25` |
+| Rejected creative, review not passing | `07` (operator rule: switch off, no edit, no resubmit) |
 | Vertical seems to have no path | `10` |
 | Verification/authorization demanded | `09` |
 | Spec rejected locally (budget mode, advantage_audience, DSA, currency) | message names the fix; shapes in `scripts/specs/` |

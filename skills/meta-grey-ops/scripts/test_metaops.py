@@ -350,7 +350,10 @@ class MetaOpsContractTests(unittest.TestCase):
                         {"event_type": "VIEW_THROUGH", "window_days": 1},
                     ],
                     "targeting": {"geo_locations": {"countries": ["TR"]},
-                                  "targeting_automation": {"advantage_audience": 0}},
+                                  "targeting_automation": {"advantage_audience": 0},
+                                  # verify now fails a read-back without pinned placements
+                                  "publisher_platforms": ["facebook", "instagram"],
+                                  "facebook_positions": ["feed"], "instagram_positions": ["stream"]},
                 },
                 "3": {
                     "id": "3", "name": "Ad", "status": "PAUSED", "effective_status": "PAUSED",
@@ -358,6 +361,7 @@ class MetaOpsContractTests(unittest.TestCase):
                         "id": "9",
                         "object_story_spec": {
                             "page_id": "2",
+                            "instagram_user_id": "17841400000000000",
                             "link_data": {
                                 "link": "https://example.com/",
                                 "message": "",
@@ -430,7 +434,9 @@ class MetaOpsContractTests(unittest.TestCase):
                             {"event_type": "ENGAGED_VIDEO_VIEW", "window_days": 1},
                         ],
                         "targeting": {"geo_locations": {"countries": ["TR"]},
-                                      "targeting_automation": {"advantage_audience": 0}},
+                                      "targeting_automation": {"advantage_audience": 0},
+                                      "publisher_platforms": ["facebook", "instagram"],
+                                      "facebook_positions": ["feed"], "instagram_positions": ["stream"]},
                     },
                     "3": {
                         "id": "3", "name": "Ad", "status": status, "effective_status": status,
@@ -438,6 +444,7 @@ class MetaOpsContractTests(unittest.TestCase):
                             "id": "9",
                             "object_story_spec": {
                                 "page_id": "2",
+                                "instagram_user_id": "17841400000000000",
                                 "link_data": {
                                     "link": "https://example.com/",
                                     "message": "",
@@ -1095,7 +1102,7 @@ class MetaOpsContractTests(unittest.TestCase):
         workspace.data["profiles"]["test"]["product_sets"] = sets or {"a1": "17"}
         workspace.data["profiles"]["test"]["catalog_id"] = "16"
         base = {"workspace_obj": workspace, "profile": "test", "map": mapping, "confirm": "SWAP",
-                "dry_run": dry, "timeout": 10, "watch": False, "interval": 0, "max_wait": 0,
+                "dry_run": dry, "timeout": 10, "watch": False, "interval": 300, "max_wait": 0,
                 "paused_ok": False, "allow_message": False, "revert": False}
         base.update(kw)
         return type("Args", (), base)()
@@ -1421,20 +1428,20 @@ class MetaOpsContractTests(unittest.TestCase):
             {
                 "META_TOKEN": "RAW_META_TOKEN_123",
                 "META_PROXY": "socks5h://puser:ppassword@1.2.3.4:1080",
-                "META_COOKIES": "c_user=61577173; xs=24%3Asecrettokenval%3A01",
+                "META_COOKIES": "c_user=10000000; xs=24%3Asecrettokenval%3A01",
             },
             clear=False,
         ):
             # Test whole string, individual pairs, and split values
             sample = (
                 "Call failed with token RAW_META_TOKEN_123 on proxy socks5h://puser:ppassword@1.2.3.4:1080 "
-                "Cookie: c_user=61577173; xs=24%3Asecrettokenval%3A01 or partial xs=24%3Asecrettokenval%3A01 "
+                "Cookie: c_user=10000000; xs=24%3Asecrettokenval%3A01 or partial xs=24%3Asecrettokenval%3A01 "
                 "or raw value 24%3Asecrettokenval%3A01"
             )
             redacted = metaops.graph.redact(sample)
             self.assertNotIn("RAW_META_TOKEN_123", redacted)
             self.assertNotIn("ppassword", redacted)
-            self.assertNotIn("61577173", redacted)
+            self.assertNotIn("10000000", redacted)
             self.assertNotIn("secrettokenval", redacted)
 
     def test_json_parse_error_names_a_new_command(self) -> None:
@@ -2102,7 +2109,10 @@ class ReviewFixTests(unittest.TestCase):
             state = metaops.launch.State(str(root / "state.json"))
             created, post = self._run_launch(spec, state)
             self.assertNotIn("campaign", [n for n, _ in created])
-            self.assertEqual(self._status_posts(post), [])
+            # The campaign itself is never posted to. (Its ad sets are now created PAUSED and
+            # flipped ACTIVE one by one, so "no ACTIVE post at all" was too broad: see
+            # test_launch_fixes.ReusedCampaignStagingTests.)
+            self.assertEqual([c for c in self._status_posts(post) if c.args[0] == "777"], [])
             self.assertIn("reused campaign 777", metaops.launch.live_summary(spec, state))
 
     def test_paused_build_never_flips_campaign(self) -> None:
@@ -2422,9 +2432,13 @@ class ReviewFixTests(unittest.TestCase):
                           {"event_type": "VIEW_THROUGH", "window_days": 1},
                           {"event_type": "ENGAGED_VIDEO_VIEW", "window_days": 1}],
                       "targeting": {"geo_locations": {"countries": ["TR"]},
-                                    "targeting_automation": {"advantage_audience": 0}}},
+                                    "targeting_automation": {"advantage_audience": 0},
+                                    "publisher_platforms": ["facebook", "instagram"],
+                                    "facebook_positions": ["feed"], "instagram_positions": ["stream"]}},
                 "3": {"id": "3", "name": "Ad", "status": "PAUSED", "effective_status": "ADSET_PAUSED",
-                      "creative": {"object_story_spec": {"page_id": "2", "link_data": {
+                      "creative": {"object_story_spec": {"page_id": "2",
+                                                         "instagram_user_id": "17841400000000000",
+                                                         "link_data": {
                           "link": "https://example.com/", "message": "", "image_hash": "test_hash",
                           "call_to_action": {"type": "LEARN_MORE",
                                              "value": {"link": "https://example.com/"}}}},
@@ -2504,7 +2518,10 @@ class ReviewFixTests(unittest.TestCase):
         import clone
 
         argv = ["clone.py", "campaign", "111", "--times", "1", "--state", state_path,
-                "--start", "2030-01-01T08:00:00+00:00"]
+                "--start", "2030-01-01T08:00:00+00:00",
+                # campaign copies are paced per account (launch.py's rule); the account comes
+                # from the metaops profile binding, so the test needs no source-campaign read
+                "--expected-account", "act_1"]
         with (
             mock.patch.object(sys, "argv", argv),
             mock.patch.object(clone, "require_expected_account"),

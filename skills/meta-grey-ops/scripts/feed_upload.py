@@ -31,14 +31,15 @@ def start(feed_id: str, url: str, update_only: bool) -> str:
     data: dict = {"url": url}
     if update_only:
         data["update_only"] = True
-    resp = graph.post(f"{feed_id}/uploads", data, context="feed upload")
+    resp = graph.post(f"{feed_id}/uploads", data, context="feed upload", capability="catalog")
     return str(resp["id"])
 
 
 def poll(upload_id: str, wait_s: int, interval_s: int = 5) -> dict:
     deadline = time.monotonic() + wait_s
     while True:
-        u = graph.get(upload_id, params={"fields": UPLOAD_FIELDS}, context="feed upload status")
+        u = graph.get(upload_id, params={"fields": UPLOAD_FIELDS}, context="feed upload status",
+                      capability="catalog")
         if u.get("end_time") or time.monotonic() >= deadline:
             return u
         time.sleep(interval_s)
@@ -63,7 +64,8 @@ def main() -> int:
         errors: list[dict] = []
         params: dict = {"fields": "id,severity,summary,description,total_count", "limit": 50}
         while True:
-            response = graph.get(f"{upload_id}/errors", params=params, context="feed upload errors")
+            response = graph.get(f"{upload_id}/errors", params=params, context="feed upload errors",
+                                 capability="catalog")
             errors.extend(response.get("data", []))
             params = graph.next_page_params(response, params)
             if params is None:

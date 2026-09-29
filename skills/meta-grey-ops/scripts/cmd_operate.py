@@ -4,10 +4,12 @@
 Adds workspace-bound, no-Graph-code commands to the metaops CLI:
 
     metaops review [--state PATH | --ids a,b | --all] [--previews --format F1,F2]
+    metaops review --tree [--campaign ID] [--statuses A,B]     # campaign > ad set > ad, logic in cmd_inspect.py
     metaops monitor --accounts accounts.json|act_a,act_b [--telegram] [--stall-impressions N] [--out-json PATH]
     metaops comments list|hide|delete [--ads a,b | --all] [--matching REGEX] --confirm HIDE|DELETE
     metaops page show|set|list-pages [--avatar f] [--cover f] [--about ..] [--website URL] --confirm PAGE
-    metaops insights pull --level L (--date-preset X | --since --until)
+    metaops insights pull --level L (--date-preset X | --since --until) [--breakdown B1,B2]
+        [--time-increment 1|7|monthly|all_days] [--action-attribution-windows 7d_click,1d_view] [--fields F1,F2]
     metaops insights leaderboard --accounts accounts.json [--date-preset X] [--top N]
     metaops insights fatigue [--days 14] [--min-spend 20] [--event E]
 
@@ -24,11 +26,16 @@ result_envelope, MetaOpsError, resolve_input, read_json, now_utc).
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import os
 import pathlib
+import sys
 from typing import Any
+
+import cmd_inspect
+import insights
 
 # facebook_business 26.0.1 AdPreview.AdFormat — verified via
 #   python -c "from facebook_business.adobjects.adpreview import AdPreview; ..."
@@ -68,6 +75,25 @@ ALLOWED_AD_FORMATS = frozenset({
     "WATCH_FEED_MOBILE", "WHATSAPP_STATUS_MEDIA",
 })
 
+PULL_HELP = """Pull spend and delivery in the account timezone. GET only, paged, sync.
+
+Default is one row per object per day with 1d_click + 1d_view conversions. Shape it with:
+  --breakdown publisher_platform,platform_position --time-increment all_days
+  --action-attribution-windows 7d_click,1d_view      (Meta reports only the windows you name)
+  --fields reach,outbound_clicks                     (added to the default columns)
+
+Placement read, joined with Keitaro:
+  1. Pull the breakdown above at --level ad (or adset).
+  2. In Keitaro report by sub11 (ad link `placement={{placement}}`, e.g. `Facebook_Mobile_Feed`),
+     with the same days, currency and click-date cohort (25-placement-performance.md).
+  3. Meta returns publisher_platform and platform_position as two columns; Keitaro gets ONE
+     string from the {{placement}} macro. The mapping between Meta's platform_position names
+     and the {{placement}} values is UNVERIFIED: this repo documents one macro value only
+     (Facebook_Mobile_Feed). Build the join key by hand and check it on one day before use.
+  4. Breakdown rows are for reading; do not push them to the tracker as cost.
+
+Meta's rules for which breakdowns may be combined are not documented in this repo, so no
+combination is rejected locally: Graph answers a bad one with code 100 on a GET."""
 REVIEW_BLOCKING = {"DISAPPROVED", "WITH_ISSUES"}
 AD_REVIEW_FIELDS = "id,account_id,name,effective_status,configured_status,issues_info,ad_review_feedback"
 
@@ -241,6 +267,18 @@ def command_review(args, ctx) -> tuple[int, dict[str, Any]]:
     )
 
 
+def command_review_entry(args, ctx) -> tuple[int, dict[str, Any]]:
+    """`review` handler: --tree is the read-only account tree (cmd_inspect.py), everything else
+    is the flat per-ad review above. --campaign/--statuses only make sense with --tree."""
+    if args.tree:
+        if args.previews:
+            raise ctx.MetaOpsError("review --tree does not take --previews")
+        return cmd_inspect.command_review_tree(args, ctx)
+    if args.campaign or args.statuses:
+        raise ctx.MetaOpsError("--campaign/--statuses belong to review --tree")
+    return command_review(args, ctx)
+
+
 # --------------------------------------------------------------------------- monitor
 
 
@@ -282,6 +320,10 @@ def command_monitor(args, ctx) -> tuple[int, dict[str, Any]]:
         "--accounts", accounts_arg, "--log", str(log_path), "--json", str(json_path),
         "--quiet", "--stall-impressions", str(args.stall_impressions),
     ]
+    # A file left by an earlier run (same --out-json) must not survive a child that crashes before
+    # writing: it would be read below as this sweep's rows.
+    if json_path.is_file():
+        json_path.unlink()
     child = ctx.run_child("monitor.py", child_args, args.timeout)
     ctx.echo_child(child)
     if not json_path.is_file():
@@ -337,7 +379,7 @@ def command_monitor(args, ctx) -> tuple[int, dict[str, Any]]:
             "attention": attention, "rows": rows, "telegram": telegram,
         },
         next_action=None if ok else (
-            "DISABLED -> document+replace (03). UNSETTLED -> topup. SILENT_STOP -> check "
+            "ERROR/UNREACHABLE -> the read failed, re-run before trusting OK. DISABLED -> document+replace (03). UNSETTLED -> topup. SILENT_STOP -> check "
             "ASL/billing/review, touch nothing else. REJECTS -> new ads, never re-enable. "
             "STALL -> swap creative angle on the listed ad sets (04)."
         ),
@@ -457,9 +499,35 @@ def command_page(args, ctx) -> tuple[int, dict[str, Any]]:
 # --------------------------------------------------------------------------- insights
 
 
+def _pull_request(args, ctx) -> dict[str, Any]:
+    """Validate the `insights pull` shaping flags locally (before any child or Graph call).
+    The child re-validates with the same insights.py functions."""
+    try:
+        breakdowns = insights.parse_breakdowns(args.breakdown) if args.breakdown else []
+        increment = (insights.parse_time_increment(args.time_increment, strict=True)
+                     if args.time_increment is not None else None)
+        if args.action_attribution_windows:
+            if args.click_window is not None or args.view_window is not None:
+                raise ValueError("--action-attribution-windows replaces --click-window/--view-window; "
+                                 "give one or the other")
+            windows = insights.parse_windows(args.action_attribution_windows)
+        elif args.click_window is not None or args.view_window is not None:
+            windows = insights.windows_from_days(args.click_window, args.view_window)
+        else:
+            windows = None
+        extra = insights.parse_extra_fields(args.fields) if args.fields else []
+    except ValueError as exc:
+        raise ctx.MetaOpsError(str(exc)) from exc
+    return {
+        "breakdowns": breakdowns, "time_increment": increment, "windows": windows,
+        "extra_fields": extra, "advisories": insights.breakdown_advisories(breakdowns),
+    }
+
+
 def _insights_pull(args, ctx) -> tuple[int, dict[str, Any]]:
     workspace, _, profile = _profile(ctx, args, "insights pull")
     account = ctx.graph.normalize_account(profile["ad_account_id"])
+    request = _pull_request(args, ctx)
     operate_dir = _operate_dir(workspace)
     csv_path = ctx.resolve_input(args.csv) if args.csv else None
     json_path = (operate_dir / f"pull-{account}-{args.level}-{_stamp(ctx)}.json").resolve()
@@ -471,10 +539,20 @@ def _insights_pull(args, ctx) -> tuple[int, dict[str, Any]]:
         child_args += ["--since", args.since, "--until", args.until]
     else:
         child_args += ["--date-preset", args.date_preset or "yesterday"]
+    if request["breakdowns"]:
+        child_args += ["--breakdown", ",".join(request["breakdowns"])]
+    if request["time_increment"] is not None:
+        child_args += ["--time-increment", str(request["time_increment"])]
+    if request["windows"]:
+        child_args += ["--action-attribution-windows", ",".join(request["windows"])]
+    if request["extra_fields"]:
+        child_args += ["--fields", ",".join(request["extra_fields"])]
     if csv_path:
         child_args += ["--csv", str(csv_path)]
     child_args += ["--json", str(json_path)]
 
+    for note in request["advisories"]:
+        print(f"  ! {note}", file=sys.stderr)
     child = ctx.run_child("insights.py", child_args, args.timeout)
     ctx.echo_child(child)
     if not child.ok:
@@ -483,8 +561,13 @@ def _insights_pull(args, ctx) -> tuple[int, dict[str, Any]]:
     return 0, ctx.result_envelope(
         "insights", True, "pulled",
         artifacts={"csv": str(csv_path) if csv_path else None, "json": str(json_path)},
-        data={"account_id": account, "level": args.level, "summary": summary},
-        next_action="Push spend as cost into the tracker (tracker-ops/01 update_costs).",
+        data={"account_id": account, "level": args.level, "summary": summary,
+              "request": request},
+        next_action=(
+            "Breakdown rows are for reading. Do not push them as cost; join placement rows with "
+            "Keitaro sub11 by hand (mapping unverified, see 16 / 25)." if request["breakdowns"] else
+            "Push spend as cost into the tracker (tracker-ops/01 update_costs)."
+        ),
     )
 
 
@@ -791,15 +874,26 @@ def command_insights(args, ctx) -> tuple[int, dict[str, Any]]:
 
 
 def register(sub, ctx) -> None:
-    p = sub.add_parser("review", help="ad review status + previews, no writes")
+    p = sub.add_parser("review", help="ad review status + previews, or the account tree; no writes")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--state", help="launch state.json to read ad ids from")
     g.add_argument("--ids", help="comma-separated ad ids")
     g.add_argument("--all", action="store_true", help="every ad on the profile's account")
+    g.add_argument("--tree", action="store_true",
+                   help="campaign > ad sets > ads in one read: status, budget, bid, schedule, "
+                        "learning, targeting summary, review feedback. Text is an indented tree "
+                        "(money in account-currency units, `!!` marks DISAPPROVED/WITH_ISSUES/"
+                        "feedback); --json keeps money in minor units. Exit 1 if any ad is "
+                        "DISAPPROVED/WITH_ISSUES")
+    p.add_argument("--campaign", help="--tree only: one campaign id (must belong to the profile's account)")
+    p.add_argument("--statuses",
+                   help="--tree only: comma list of effective_status values (default: everything "
+                        "except DELETED). Shows the ads with those statuses, campaigns/ad sets that "
+                        "have one themselves, and the parents of everything shown")
     p.add_argument("--previews", action="store_true")
     p.add_argument("--format", default="DESKTOP_FEED_STANDARD,MOBILE_FEED_STANDARD",
                    help="comma-separated AdPreview.AdFormat values (only with --previews)")
-    p.set_defaults(handler=lambda args: command_review(args, ctx))
+    p.set_defaults(handler=lambda args: command_review_entry(args, ctx))
 
     p = sub.add_parser("monitor", help="status+spend sweep, STALL detection, optional Telegram alerts")
     p.add_argument("--accounts", required=True, help="accounts.json (bulk.py format) or act_1,act_2")
@@ -842,11 +936,32 @@ def register(sub, ctx) -> None:
 
     p = sub.add_parser("insights", help="spend/delivery pulls and cross-account creative leaderboard")
     isub = p.add_subparsers(dest="insights_action", required=True)
-    pull = isub.add_parser("pull")
+    pull = isub.add_parser(
+        "pull",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=PULL_HELP,
+    )
     pull.add_argument("--level", required=True, choices=["campaign", "adset", "ad"])
     pull.add_argument("--date-preset")
     pull.add_argument("--since")
     pull.add_argument("--until")
+    pull.add_argument("--breakdown",
+                      help="comma list, validated locally: " + ", ".join(insights.ALLOWED_BREAKDOWNS))
+    pull.add_argument("--time-increment", dest="time_increment", metavar="1|7|monthly|all_days",
+                      help="rows per day (default 1), per 7 days, per month, or one row for the "
+                           "whole range (all_days: use it for placement/geo reads)")
+    pull.add_argument("--action-attribution-windows", dest="action_attribution_windows",
+                      metavar="LIST",
+                      help="e.g. 7d_click,1d_view; allowed: " + ", ".join(insights.ATTRIBUTION_WINDOWS)
+                           + " (7d_view/28d_view were dropped 2026-01-12 and come back empty)")
+    pull.add_argument("--click-window", dest="click_window", type=int, choices=insights.CLICK_WINDOW_DAYS,
+                      help="shorthand: click days 1|7|28 (default 1); replaced by "
+                           "--action-attribution-windows")
+    pull.add_argument("--view-window", dest="view_window", type=int, choices=insights.VIEW_WINDOW_DAYS,
+                      help="shorthand: view days, 1 only (default 1)")
+    pull.add_argument("--fields", metavar="LIST",
+                      help="extra columns ADDED to the default set (allow-list; "
+                           "see insights.EXTRA_FIELDS)")
     pull.add_argument("--csv")
     pull.set_defaults(handler=lambda args: command_insights(args, ctx), insights_mode="pull")
     lb = isub.add_parser("leaderboard")

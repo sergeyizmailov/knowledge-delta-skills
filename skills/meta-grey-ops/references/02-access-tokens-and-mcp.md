@@ -1,11 +1,14 @@
 # 02 — Access: app, scopes, tokens, MCP vs API vs CLI
 
-Reviewed 2026-09-14 (scrape prefixes, Power Editor live scopes); 2026-09-02 vs
+Reviewed 2026-09-14 (scrape prefixes, Power Editor live scopes); 2026-09-29 (all five scraped classes probed live, token routing, `token import`); 2026-09-02 vs
 developers.facebook.com (permissions, system-users, ads-ai-connectors); claude-code
-\#57191/#62376. API **v26.0** (2026-07-29); pin `/v26.0/` in every call — unversioned rejected.
+issues #57191/#62376. API **v26.0** (2026-07-29); pin `/v26.0/` in every call — unversioned rejected.
 Marketing API versions end ~12 months after release (v24.0 → 2026-10-06; v25/v26 TBD); Graph core
 ~2yr (v24 → 2028-02-18, v25 → 2028-07-29). Marketing calls follow the Marketing clock [official,
 2026-09-25].
+
+Versions re-checked 2026-09-29 against the Graph changelog: v24.0 2025-10-08 (available until 2026-10-06), v25.0
+2026-02-18, v26.0 2026-07-29 (v25/v26 end dates TBD). `META_API_VERSION` must look like `vNN.N`.
 
 Owner of every access fact in paid-media; `meta-ads/13` keeps clean-lane governance.
 
@@ -131,7 +134,7 @@ not the BM — a verified agency BM doesn't lift your app. Read `ads_api_access_
 
 | Token | Lives | Dies when | Proxy rule |
 |---|---|---|---|
-| **System User** (preferred) | until revoked ("Never") or 60d if chosen | admin revokes, app secret rotated w/ proof enforced, System User removed | BM/operator's assigned egress; `META_ALLOW_NO_PROXY=1` only when direct current-IP access is intentional |
+| **System User** (preferred) | until revoked ("Never") or 60d if chosen | admin revokes, app secret rotated w/ proof enforced, System User removed | BM/operator's assigned egress; no proxy only when direct current-IP access is intentional: under `metaops` that is workspace `defaults.allow_no_proxy: true` (an exported `META_ALLOW_NO_PROXY=1` is dropped) |
 | Long-lived user (~60d) | 60 days | **login session dies** — logout, password change, security rotation, multi-session flag | must exit antidetect profile's IP (`01`) |
 | Short user (Explorer) | ~1–2h | expiry | exchange immediately |
 | Page token | derived per call | parent dies | same as parent |
@@ -151,19 +154,91 @@ provisioning`, `catalog create`, BM assignment) always requires a declared Admin
 
 | Source | Lifetime | Exchangeable | appsecret_proof | Use |
 |---|---|---|---|---|
-| **EAAB… scraped from Ads Manager session** (`13`) | until logout / password change / checkpoint | **no** — Meta's own app (Power Editor 119211728144504) | no | needs session bundle: `META_COOKIES="c_user=...; xs=..."` + matching `META_PROXY` and UA, else standalone calls hit `code 1: Invalid request` |
+| **EAAB… scraped from Ads Manager session** (`13`) | until logout / password change / checkpoint | **no** — Meta's own app (Power Editor 119211728144504) | no | needs the session's cookies (`META_COOKIES="c_user=...; xs=..."`, verified 2026-09-29: none → `code 1: Invalid request`); the User-Agent is not required on the same IP (default and another browser's UA passed); another IP untested, so keep the profile's `META_PROXY` |
 | **User token from YOUR developer app** (Explorer or FB Login) | 1–2h → long-lived 60d | yes, with that app's id+secret | yes | preferred user-token path; no cookies |
 
-**[K] First-party scrape prefixes — each a different Meta app, scopes fixed, do not stack.**
-Identify with `GET /app` (same cookies+proxy). Another surface's token does **not** upgrade an
-EAAB (Commerce Manager won't add `catalog_management`).
+**[K] First-party scrape prefixes — each a different Meta app, scopes fixed.** One login yields all
+five (live 2026-09-29); they do not stack in one token. Another surface's token does **not** upgrade an
+EAAB (Commerce Manager won't add `catalog_management`), so each lives in its own variable and serves
+the capability it carries (matrix and routing below; `scripts/tokens.py` is the single table).
+Identify with `GET /app` (same cookies+proxy): a 4-char prefix only encodes the magnitude of the app id,
+so an own-app or System User token can start with the same letters. A class is **confirmed** only by the
+app id. `GET /app` names (2026-09-29): EAAB "Power editor", EAAI "Ads Manager", EAAG "Business
+Manager", EAAH "Products", EAAd "Ads Events Manager".
 
 | Prefix | Where (view-source / F12) | What | Launch / catalog |
 |---|---|---|---|
-| **EAAB** | Ads Manager (`accessToken="` or `window.__accessToken`) | Power Editor **119211728144504**, autolaunch default (`13`). Live 2026-09-14: `ads_management`, `ads_read`, `business_management`, Page scopes; **no** `catalog_management` / `ads_mcp_management` / `instagram_basic`. Debugger `Valid: True` ≠ working: no cookies → code 1 (trace `opes_mids`); self-`debug_token` → 100. `validate_only` write hit **190/459** | ads yes if cookies+egress hold; catalog **feeds/uploads no** (`#10`), catalog **content** yes without the scope — `POST /{catalog_id}/items_batch` (`item_type=PRODUCT_ITEM`), `POST /{catalog_id}/product_sets`, set `filter` edits (2026-09-22). Dead `/{catalog_id}/batch` returns a misleading `#10` |
-| **EAAI** | Billing `facebook.com/ads/manager/account_settings/account_billing`, search `access_token:` | [practitioner, cpa.rip 2021] claimed "wider than EAAB"; dies on logout; Dolphin imports EAAB not EAAI. Scopes not live-verified | not a `metaops` token |
-| **EAAH** | Commerce Manager (`business.facebook.com/commerce/…`, F12 → `graph.facebook.com` request) | App **515496645328243 "Products"** (2026-09-26, two farm BMs). `/me/permissions` → **#10**, self-`debug_token` → 100. Needs cookies + egress | catalog content writes (`metaops catalog products batch`, `catalog set create`, 2026-09-26); ad account/campaign reads. **Not a launch token:** `doctor` fails scopes gate, `apply` needs doctor receipt — use EAAB for launch |
-| **EAAG** | BM Settings e.g. `business.facebook.com/settings/people`, search `EAAG`; FB Helper grabs it on `business.facebook.com` pages when no EAAB is present | App **436761779744620 "Business Manager"** (live 2026-09-27, `GET /app`). `/me/permissions` live 2026-09-27: **81 granted**, incl. `ads_management`, `ads_read`, `ads_mcp_management`, `ads_agentic`, `attribution_read`, `agentic_checkout_account_linking`, `business_creative_insights(_share)`, `business_creative_management`, `business_creative_transfer` (first 10 alphabetically seen; rest not recorded) — far wider than EAAB. BM-surface token; **not** the Events Manager CAPI token | not a `metaops` token — take EAAB from `adsmanager.facebook.com` for launches |
+| **EAAB** | Ads Manager (`accessToken="` or `window.__accessToken`) | Power Editor **119211728144504**, autolaunch default (`13`). Live 2026-09-14: `ads_management`, `ads_read`, `business_management`, Page scopes; **no** `catalog_management` / `ads_mcp_management` / `instagram_basic`. Debugger `Valid: True` ≠ working: no cookies → code 1 (trace `opes_mids`); self-`debug_token` → 100. `validate_only` write hit **190/459** | ads yes with the cookies (2026-09-29: a real ad-set rename + restore, `validate_only` write); catalog **feeds/uploads no** (`#10`), catalog **content** yes without the scope — `POST /{catalog_id}/items_batch` (`item_type=PRODUCT_ITEM`), `POST /{catalog_id}/product_sets`, set `filter` edits (2026-09-22). Dead `/{catalog_id}/batch` returns a misleading `#10` |
+| **EAAI** | Billing `facebook.com/ads/manager/account_settings/account_billing`, search `access_token:` | [practitioner, cpa.rip 2021] claimed "wider than EAAB"; dies on logout; Dolphin imports EAAB not EAAI. Scopes not live-verified | `META_TOKEN_RULES`. 2026-09-29: `GET act_ID` and `GET act_ID/adrules_library` answer (empty list); a **real** ad-set rename + restore worked (activity log: "via Ads Manager"); no cookies → code 1; rule create/execute not run |
+| **EAAH** | Commerce Manager (`business.facebook.com/commerce/…`, F12 → `graph.facebook.com` request) | App **515496645328243 "Products"** (2026-09-26, two farm BMs). `/me/permissions` → **#10**, self-`debug_token` → 100. Needs cookies + egress | catalog content writes (`metaops catalog products batch`, `catalog set create`, 2026-09-26); ad account/campaign reads. `META_TOKEN_CATALOG`. 2026-09-29: `GET /me/businesses`, `GET {business}/owned_product_catalogs` and `GET act_ID` answer; a **real** ad-set rename + restore worked on the own BM, which contradicts the older "ads writes fail #10" report (another BM, 2026-09-26): it depends on the BM, works on the own one; no cookies → code 1. `/me/permissions` #10 is not re-probed: `doctor` skips the scope gate for this class |
+| **EAAG** | BM Settings e.g. `business.facebook.com/settings/people`, search `EAAG`; FB Helper grabs it on `business.facebook.com` pages when no EAAB is present | App **436761779744620 "Business Manager"** (live 2026-09-27, `GET /app`). `/me/permissions` live 2026-09-27: **81 granted**, incl. `ads_management`, `ads_read`, `ads_mcp_management`, `ads_agentic`, `attribution_read`, `agentic_checkout_account_linking`, `business_creative_insights(_share)`, `business_creative_management`, `business_creative_transfer` (first 10 alphabetically seen; rest not recorded) — far wider than EAAB. BM-surface token; **not** the Events Manager CAPI token | `META_TOKEN_BUSINESS`. 2026-09-29: `GET /me/businesses` (own BM), `GET act_ID` answer; a **real** ad-set rename + restore worked (activity log: "via Business Manager"); one PAUSED create + delete worked earlier (extension notes); no cookies → code 1. As `META_TOKEN` only via `token import --as-ads` when no EAAB exists |
+| **EAAd** | Events Manager (`business.facebook.com/events_manager2`, FB Helper) | App **2094176354154603 "Ads Events Manager"** (live 2026-09-29, `GET /app`). The pixel node reads and the ad account node reads, but reading the ad **set** node answers **code 10** "Permission Denied": no ad-object access. The empty-batch probe (`POST /{pixel}/events` with `data: []` answering "must be non-empty") passes = auth confirmed, and a real test event (`metaops business capi test --event ViewContent --test-code TEST…`) returned `events_received: 1` on 2026-09-29, so events are **verified** for EAAd (test events only; a production event was not sent). **The only scraped class that reads without cookies and without a User-Agent** (verified 2026-09-29). Not the manual CAPI dataset token below | `META_TOKEN_EVENTS`; ads writes with it are refused |
+
+**Capability matrix** (evidence: **V** verified live with the date, **C** claimed by extension notes or a practitioner,
+**U** unverified, — not evidenced). Live probes 2026-09-29 (the operator, one user, five fresh tokens, Mac, no proxy): round 1 read-only
+plus `validate_only`; round 2 a **real reversible ad-set rename** (write, read back, restore), the no-cookies test, a UA test
+and the empty-batch CAPI probe. Not probed: `/me/permissions`, a real CAPI event, any other IP.
+
+| class | ads read | ads write | business read | catalog | events write | rules | cookies required |
+|---|---|---|---|---|---|---|---|
+| **EAAB** | V 09-14, 09-29 | V (launches; real rename 09-29) | V (`business_management` 09-14) | V content only: `items_batch`, sets (09-22); feeds/uploads #10 | C (empty-batch probe 09-29) | U | yes, V 09-29 (none → code 1) |
+| **EAAI** | V 09-29 | V (real rename 09-29, "via Ads Manager") | — | — | — | C (`adrules_library` list reads 09-29; create/execute not run) | yes, V 09-29 |
+| **EAAG** | V 09-29 | V (real rename 09-29, "via Business Manager"; PAUSED create + delete earlier) | V 09-29 | — | — | — | yes, V 09-29 |
+| **EAAH** | V 09-29 | V on the own BM (real rename 09-29); older report: #10 on another BM | V 09-29 | V (content writes 09-26; `owned_product_catalogs` 09-29) | — | — | yes, V 09-26 and 09-29 |
+| **EAAd** | account node only; ad set node → code 10 (09-29) | refused (cannot even read the ad set) | — | — | C (pixel node reads and empty-batch probe 09-29; no event posted) | — | **no**, V 09-29 (reads) |
+| System User (own app) | V | V | V | V | V (`02` §5) | U | no |
+
+The User-Agent is required by no class: EAAB works with the default UA and with another browser's UA on the same IP (no proxy);
+a different IP is untested, and the extension exports no UA, which is fine.
+
+`metaops` acts on this table (`scripts/tokens.py`): nothing is listed without evidence, and "U" rows are
+reported as unverified in `doctor` and `token import` instead of being trusted.
+
+**Routing: one variable per capability** (`scripts/graph.py` `resolve_token`; only `META_TOKEN` is required):
+
+| capability | variable | used by |
+|---|---|---|
+| ads read/write | `META_TOKEN` (default) | launch, edit, clone, activate, insights, doctor |
+| business read | `META_TOKEN_BUSINESS` | `business assets`, `business pixel shared` |
+| catalog | `META_TOKEN_CATALOG` | `catalog *`, feed uploads, `assets set-products` / `swap` set reads |
+| CAPI events | `META_TOKEN_EVENTS` | `business capi test`, doctor's dataset probe |
+| rules | `META_TOKEN_RULES` | `rules *` (`rules.py`) |
+
+A capability without its own variable uses `META_TOKEN` only when META_TOKEN's class carries it; otherwise
+the command exits naming the missing variable and the class that fits (EAAB carries all six, at the
+evidence levels above, so a single-EAAB setup behaves as before). Cookies: `META_COOKIES` is shared (same
+login = same session); `META_COOKIES_<BUSINESS|CATALOG|EVENTS|RULES>` is optional and wins for that
+token. `META_USER_AGENT` is shared. Workspace `defaults.token_envs` (`{business_read|catalog|events_write|rules: ENV_NAME}`)
+renames a variable. `<VAR>_APP_ID` (written by `token import`) records the confirmed app id and beats the prefix
+guess. `mcp.py` stays on `META_TOKEN`: the MCP needs `ads_mcp_management` (granted to an EAAG, MCP with it untested).
+
+**Ads-write guard** (any non-GET on the ads slot): EAAd is **refused** (no ad-object access). EAAB, EAAI, EAAG and EAAH are
+allowed, silently: a real write worked with each on the own BM (the slot convention stays: EAAB in `META_TOKEN`, the others in
+their variables; a `warn` policy exists in `graph.py` for a class only partly proven, none uses it now). A System User token that only shares a prefix is
+cleared by `token import --allow-unknown` (records `META_TOKEN_APP_ID`) or `METAOPS_ALLOW_TOKEN_CLASS=EAAd`.
+
+**`metaops token import`** — `pbpaste | metaops token import --env-file PATH [--name VAR] [--profile P] [--no-verify]
+[--allow-unknown] [--force] [--as-ads] [--cookies-suffix [S]] [--dry-run]`. Reads the FB Helper block (token, blank
+line, cookie header; or `META_TOKEN=… META_COOKIES=… META_USER_AGENT=…`, a `User-Agent:` line, the extension's
+cookie JSON). **One paste may hold the blocks of all five classes** (each with the same cookies): every token must be of a
+different class (two EAAB, or two unknown, are refused); each is verified in order (2 calls each), the first failure of any kind
+stops the run with nothing written, and the file is written once. The cookies and UA are shared; cookie blocks of different
+logins (`c_user` differs) or different UAs are refused, differing sets of one login keep the last complete one with a warning.
+`--name` and `--cookies-suffix` are single-token flags. An unknown-class token wants `META_TOKEN` like an EAAB: not together. Without `--env-file` it is a
+dry run. Verification is `GET /me?fields=id,name` + `GET /app?fields=id,name` (2 calls, no retries, no `debug_token`)
+through `META_PROXY` with the pasted cookies and UA; it refuses and writes nothing on 190 / 102 / 459 / 460 / 463 / 467,
+code 1, a `c_user` cookie that is not the `/me` id, an unknown class (`--allow-unknown`), or a prefix that disagrees with
+the app id (`--force`). Class → variable: EAAB `META_TOKEN`, EAAG `META_TOKEN_BUSINESS`, EAAH `META_TOKEN_CATALOG`, EAAd
+`META_TOKEN_EVENTS`, EAAI `META_TOKEN_RULES`; a non-EAAB class into the ads variable needs `--force` (an EAAG: `--as-ads`,
+only when the file holds no EAAB there). Shared cookies of another login are not replaced (`--cookies-suffix` or
+`--force`). The write is atomic (temp file 0600 + `os.replace`), keeps unrelated lines, replaces only the managed keys
+(`<VAR>`, `<VAR>_APP_ID`, `META_COOKIES[_<S>]`, `META_USER_AGENT`), leaves a 0600 `.bak`, and prints only class, app,
+user, first 4 + last 4 characters, cookie **names** and the path. Then: `set -a; . <file>; set +a` and `metaops doctor`.
+
+**Stays manual:** copying the block from the browser (FB Helper); `META_PROXY` (the proxy must be the profile's exit IP,
+the import never sets it); the profile's proxy (the UA is optional); re-importing after 190/459-467
+(dead tokens never revive); minting System User tokens and `debug_token` of a first-party token (both impossible from
+here); deleting the `.bak` (it holds the previous secrets); keeping the env file out of git. Nothing refreshes a token. Log redaction masks every cookie value except `c_user` (the Facebook user id, an identifier, which is what makes the `c_user` == `/me` id check readable).
 
 Runnable path for YOUR-app user token, inside persona's antidetect profile (same exit IP as
 `META_PROXY`):
@@ -183,6 +258,13 @@ Runnable path for YOUR-app user token, inside persona's antidetect profile (same
    --workspace . --profile <name> --json doctor --whoami` — expect `type=USER`, `expires_at`
    ~60d, proxy/lifetime verdict.
 4. Store token + expiry; re-mint before day 55.
+
+**Field 2026-09-29 (own BM "<BM name>", Mac, no proxy):** a scraped EAAB (app "Power editor"
+119211728144504) passed `metaops doctor` (14 ok, incl. the `validate_only` write) with `allow_no_proxy`.
+That contradicts the blanket "no cookies/proxy → code 1 / 190-459" above for this session. Second round the same day
+settled the factors on that IP: **cookies decide** (without them EAAB, EAAI, EAAG and EAAH answer code 1, an EAAd does not); the
+User-Agent does not; a different IP is untested. `debug_token` on a first-party token still returns
+code 100. The token still dies with the session (`01`).
 
 A user token can do nothing a System User can't — sees whatever the human sees (incl. client
 accounts never shared to a BM). Every call is the persona's session (`01` proxy discipline); one
@@ -253,8 +335,10 @@ proxy creds from all output.
 `account_status` 1 active / 2 disabled / 3 unsettled (unpaid, not a ban) / 7 pending risk review /
 9 grace period / 100–101 closing — never diagnose from it alone (full enum → `07`). 3 cleared by
 itself once the card charged; `balance` = unbilled amount in cents, not prepaid (FIELD 2026-09-27).
+The billing threshold can be neither read nor set via API (UI only; Meta rolled back an operator's
+change, 2026-09-29): don't script it, see `22`.
 Rate limits: BUC, header-driven (`meta-ads/14`); Limited ≈300 calls/h/account — on a limit stop,
-don't retry (§8); no polling loops.
+don't retry (§8); no polling loops; `x-fb-ads-insights-throttle` is read too (pause at 85%).
 
 ## 8. Token choice vs "automation" Account Integrity bans (research 2026-09-27)
 

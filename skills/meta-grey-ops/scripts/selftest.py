@@ -117,6 +117,25 @@ def test_transport() -> None:
         check("create is not retried on a bodyless 5xx", s.calls == 1, f"calls={s.calls}")
         check("bodyless 5xx is outcome_unknown", e.outcome_unknown is True)
 
+    transient = FakeResponse(500, {"error": {"message": "temporary", "code": 2, "is_transient": True,
+                                             "type": "OAuthException"}})
+    s = with_session([transient, transient, ok])
+    try:
+        graph.call("POST", "act_1/campaigns", data={"name": "x"}, retries=4)
+        check("transient create error is not re-sent", False, "no error raised")
+    except graph.GraphError as e:
+        check("transient create error is not re-sent", s.calls == 1, f"calls={s.calls}")
+        check("transient create error is outcome_unknown", e.outcome_unknown is True)
+    s = with_session([transient, transient, ok])
+    graph.call("POST", "1/status", data={"status": "PAUSED"}, idempotent=True, retries=4)
+    check("transient idempotent write is retried", s.calls == 3, f"calls={s.calls}")
+    for bad in ("act_1/../act_99/campaigns", "123/%2e%2e/act_99/campaigns", "act_1//campaigns"):
+        try:
+            graph.validate_graph_path(bad)
+            check(f"path guard rejects {bad!r}", False, "accepted")
+        except (graph.GraphError, SystemExit, ValueError):
+            check(f"path guard rejects {bad!r}", True)
+
     rejected = FakeResponse(400, {"error": {"message": "bad", "code": 100,
                                             "error_subcode": 1487390, "type": "OAuthException"}})
     s = with_session([rejected] * 9)

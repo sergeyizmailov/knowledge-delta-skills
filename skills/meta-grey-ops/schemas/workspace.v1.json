@@ -13,6 +13,7 @@
       "items": {"type": "string", "pattern": "^act_[0-9]+$"},
       "uniqueItems": true
     },
+    "risk": {"$ref": "#/$defs/risk"},
     "profiles": {
       "type": "object",
       "minProperties": 1,
@@ -25,6 +26,16 @@
       "properties": {
         "profile": {"type": "string", "minLength": 1},
         "token_env": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"},
+        "token_envs": {
+          "type": "object",
+          "properties": {
+            "business_read": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"},
+            "catalog": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"},
+            "events_write": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"},
+            "rules": {"type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$"}
+          },
+          "additionalProperties": false
+        },
         "allow_no_proxy": {"type": "boolean"},
         "state_dir": {"type": "string"}
       },
@@ -49,6 +60,7 @@
         "dataset_id": {"type": "string", "pattern": "^[0-9]+$"},
         "catalog_id": {"type": "string", "pattern": "^[0-9]+$"},
         "feed_id": {"type": "string", "pattern": "^[0-9]+$"},
+        "keitaro_campaign_id": {"type": "string", "pattern": "^[0-9]+$"},
         "token_kind": {"type": "string", "enum": ["system_user", "user", "auto"]},
         "product_sets": {
           "type": "object",
@@ -56,7 +68,25 @@
           "additionalProperties": {"type": "string", "pattern": "^[0-9]+$"}
         },
         "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
-        "timezone": {"type": "string", "minLength": 1}
+        "timezone": {"type": "string", "minLength": 1},
+        "risk": {"$ref": "#/$defs/risk"}
+      },
+      "additionalProperties": false
+    },
+    "risk": {
+      "description": "doctor --risk thresholds: the operator's own priors, no Meta source ties them to disables. Profile values override workspace values, which override the code defaults.",
+      "type": "object",
+      "properties": {
+        "min_account_age_days": {"type": "number", "minimum": 0},
+        "min_amount_spent": {"type": "number", "minimum": 0},
+        "min_pixel_age_days": {"type": "number", "minimum": 0},
+        "min_page_followers": {"type": "number", "minimum": 0},
+        "max_disapproved_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "disapproved_high_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "min_ads_for_ratio": {"type": "integer", "minimum": 1},
+        "ads_window_days": {"type": "integer", "minimum": 1},
+        "ads_max_pages": {"type": "integer", "minimum": 1},
+        "spend_cap_near_ratio": {"type": "number", "minimum": 0, "maximum": 1}
       },
       "additionalProperties": false
     }

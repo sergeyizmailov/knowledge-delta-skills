@@ -5,6 +5,10 @@
     python3 media.py --account act_123 --video creatives/slots.mp4 --page 456
     python3 media.py --account act_123 --video a.mp4 b.mp4 --manifest media.json
 
+An existing --manifest is MERGED, not overwritten: entries are keyed by their file path, so
+re-uploading a file replaces its entry and every other entry survives. A manifest that
+belongs to another account is refused (hashes are account-scoped).
+
 Then paste `image_hash` / `video_id` / `image_hash` (thumbnail) from the manifest into
 the launch spec.
 
@@ -195,6 +199,55 @@ def thumbnail_hash(account: str, video_id: str) -> dict:
     return {"thumbnail_uri": chosen["uri"], "thumbnail_image_hash": entry["image_hash"]}
 
 
+def merge_manifest(existing: dict | None, new: dict) -> dict:
+    """Merge a run's uploads into the manifest already on disk instead of replacing it.
+
+    A second `media.py` call with a different file used to overwrite media.json and silently
+    drop every hash the first call produced. Entries are keyed by their `file` path: uploading
+    the same file again replaces its entry, any other entry is kept. Hashes are account-scoped,
+    so a manifest that belongs to another account is refused rather than mixed."""
+    if not existing:
+        return new
+    if existing.get("account_id") != new["account_id"]:
+        raise SystemExit(
+            f"manifest already holds media for {existing.get('account_id')}, not {new['account_id']}. "
+            "Image hashes are account-scoped: pick another --manifest path for this account."
+        )
+    merged = {k: v for k, v in existing.items() if k not in ("images", "videos")}
+    merged.update({k: v for k, v in new.items() if k not in ("images", "videos")})
+    for kind in ("images", "videos"):
+        entries = {e.get("file"): e for e in existing.get(kind) or []}
+        for entry in new.get(kind) or []:
+            entries[entry.get("file")] = entry
+        merged[kind] = list(entries.values())
+    return merged
+
+
+def write_manifest(path: str, manifest: dict) -> dict:
+    """Read the manifest at `path` (if any), merge `manifest` into it, write it atomically."""
+    existing = None
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                existing = json.load(fh)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"{path} exists but is not readable JSON ({exc}); refusing to overwrite it. "
+                             "Move it aside or pick another --manifest.") from exc
+        if not isinstance(existing, dict):
+            raise SystemExit(f"{path} exists but is not a manifest object; refusing to overwrite it.")
+    merged = merge_manifest(existing, manifest)
+    parent = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=".manifest.", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(graph.redact(json.dumps(merged, indent=2)))
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return merged
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--account", required=True)
@@ -220,9 +273,8 @@ def main() -> int:
         entry.update(thumbnail_hash(account, video_id))
         manifest["videos"].append(entry)
 
-    with open(args.manifest, "w", encoding="utf-8") as fh:
-        fh.write(graph.redact(json.dumps(manifest, indent=2)))
-    print(f"\nmanifest → {args.manifest}")
+    merged = write_manifest(args.manifest, manifest)
+    print(f"\nmanifest → {args.manifest} ({len(merged['images'])} image(s), {len(merged['videos'])} video(s))")
     return 0
 
 

@@ -22,6 +22,10 @@ instead, for a run that needs a review window before spend:
 
 Use ``--json`` before the subcommand for one machine-readable result on stdout.
 Child diagnostics are sent to stderr and are redacted by graph.py again here.
+
+Egress: every Graph call needs META_PROXY. With a workspace, the ONLY way to run without one is
+workspace.json ``defaults.allow_no_proxy: true`` — an exported META_ALLOW_NO_PROXY=1 is dropped
+by metaops on purpose (workspace-free commands such as ``doctor --whoami`` still honour it).
 """
 
 from __future__ import annotations
@@ -62,11 +66,11 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 WORKSPACE_LIFECYCLE_COMMANDS = {
     "media", "plan", "apply", "verify", "status", "activate", "bulk-plan", "bulk-apply",
     "bulk-activate", "feed", "edit", "clone", "rules", "catalog", "business", "review",
-    "monitor", "comments", "page", "insights",
+    "monitor", "comments", "page", "insights", "keitaro", "activity", "images",
 }
 
 # Command groups implemented in cmd_*.py modules; each exposes register(sub, ctx).
-COMMAND_MODULES = ("cmd_edit", "cmd_catalog", "cmd_business", "cmd_operate")
+COMMAND_MODULES = ("cmd_edit", "cmd_catalog", "cmd_business", "cmd_operate", "cmd_keitaro", "cmd_inspect", "cmd_token")
 
 
 class MetaOpsError(Exception):
@@ -147,7 +151,9 @@ def configure_workspace(
         os.environ.setdefault("META_ALLOW_NO_PROXY", "1")
     else:
         # The no-proxy escape hatch is a workspace decision; an inherited shell export must
-        # not silently lift the proxy requirement for a workspace that did not opt in.
+        # not silently lift the proxy requirement for a workspace that did not opt in. Under
+        # metaops the ONLY way to run without META_PROXY is workspace.json
+        # defaults.allow_no_proxy=true — graph._session's refusal message says so.
         os.environ.pop("META_ALLOW_NO_PROXY", None)
     os.environ["METAOPS_WORKSPACE"] = str(workspace.path)
     allowed_accounts = sorted(
@@ -310,28 +316,43 @@ def asset_receipt_path(profile: str, scope: str) -> pathlib.Path:
     return (PLAN_DIR / f"assets.{safe_name(profile, 'profile')}.{scope}.json").resolve()
 
 
-def _fresh_timestamp(receipt: dict[str, Any], path: pathlib.Path) -> None:
+def _fresh_timestamp(receipt: dict[str, Any], path: pathlib.Path, check_age: bool = False) -> None:
+    """A receipt must always carry a parseable, offset-aware `checked_at`. Its AGE is only
+    enforced (`check_age`) by commands that create or activate — apply, bulk-apply, activate,
+    bulk-activate — where a day-old preflight must not authorise new spend. Read-side and
+    housekeeping commands (status, verify, media, review, insights, ...) still need a receipt
+    bound to the same workspace/profile/account but ignore how old it is, so a 25 h weekend
+    does not block reading or pausing what is already live. METAOPS_DOCTOR_MAX_AGE_SECONDS
+    overrides the 24 h TTL for the enforcing commands."""
     try:
         checked_at = dt.datetime.fromisoformat(str(receipt["checked_at"]).replace("Z", "+00:00"))
     except (KeyError, ValueError) as exc:
         raise MetaOpsError(f"receipt has no valid checked_at: {path}") from exc
     if checked_at.tzinfo is None:
         raise MetaOpsError(f"receipt checked_at has no UTC offset: {path}")
+    if not check_age:
+        return
     age = (dt.datetime.now(dt.timezone.utc) - checked_at.astimezone(dt.timezone.utc)).total_seconds()
     if age < -300 or age > DOCTOR_MAX_AGE:
-        raise MetaOpsError(f"receipt is stale or future-dated ({int(age)}s): refresh it")
+        raise MetaOpsError(
+            f"receipt {path.name} is stale or future-dated ({int(age)}s; maximum {DOCTOR_MAX_AGE}s): "
+            "re-run doctor / assets verify immediately before this create or activation"
+        )
 
 
 def require_doctor(
     spec: dict[str, Any],
     receipt_arg: str | None = None,
     business_id: str | None = None,
+    check_age: bool = False,
 ) -> tuple[pathlib.Path, str]:
+    """Load the doctor receipt bound to this account/Page/dataset/business. `check_age`
+    (apply, bulk-apply, activate, bulk-activate) also enforces the freshness TTL."""
     path = resolve_input(receipt_arg) if receipt_arg else doctor_path(str(spec["account_id"]))
     receipt = read_json(path, "doctor receipt")
     if not isinstance(receipt, dict) or receipt.get("schema") != DOCTOR_SCHEMA:
         raise MetaOpsError(f"unsupported doctor receipt: {path}")
-    _fresh_timestamp(receipt, path)
+    _fresh_timestamp(receipt, path, check_age)
     # Version rides the N/N-1 window (warning on N-1); every other bound field stays
     # fail-closed: a changed account/Page/dataset/BM still refuses even on N-1.
     check_api_version(receipt.get("api_version"), "doctor receipt")
@@ -361,6 +382,7 @@ def require_assets(
     workspace: meta_workspace.Workspace,
     profile: str,
     catalog_required: bool,
+    check_age: bool = False,
 ) -> tuple[pathlib.Path, str]:
     scopes = ["all"] if catalog_required else ["core", "all"]
     candidates = [asset_receipt_path(profile, scope) for scope in scopes]
@@ -373,7 +395,7 @@ def require_assets(
     errors: list[str] = []
     for path in existing:
         try:
-            return validate_asset_receipt(path, workspace, profile, catalog_required)
+            return validate_asset_receipt(path, workspace, profile, catalog_required, check_age)
         except MetaOpsError as exc:
             errors.append(str(exc))
     raise MetaOpsError(errors[-1])
@@ -384,11 +406,12 @@ def validate_asset_receipt(
     workspace: meta_workspace.Workspace,
     profile: str,
     catalog_required: bool,
+    check_age: bool = False,
 ) -> tuple[pathlib.Path, str]:
     receipt = read_json(path, "asset receipt")
     if not isinstance(receipt, dict) or receipt.get("schema") != ASSET_RECEIPT_SCHEMA:
         raise MetaOpsError(f"unsupported asset receipt: {path}")
-    _fresh_timestamp(receipt, path)
+    _fresh_timestamp(receipt, path, check_age)
     check_api_version(receipt.get("api_version"), "asset receipt")
     if receipt.get("profile") != profile or receipt.get("workspace_sha") != file_sha(workspace.path):
         raise MetaOpsError("workspace/profile changed after asset verification; verify assets again")
@@ -470,18 +493,47 @@ def echo_child(result: ChildResult) -> None:
         print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
 
 
-def graph_error(text: str) -> dict[str, Any] | None:
-    match = re.search(r"code=(?P<code>[^ ]+) subcode=(?P<subcode>[^:]+):", text)
-    trace = re.search(r"\(trace (?P<trace>[^)]*)\)", text)
-    if not match and not trace:
+_GRAPH_ERROR_LINE = re.compile(r"code=(?P<code>[^ ]+) subcode=(?P<subcode>[^:]+):")
+_GRAPH_TRACE = re.compile(r"\(trace (?P<trace>[^)]*)\)")
+_OUTCOME_UNKNOWN = re.compile(r"outcome[ _]unknown", re.IGNORECASE)
+
+
+def _graph_scalar(raw: str) -> Any:
+    """`None` → None, `-1` / `4841018` → int, anything else stays the text."""
+    if raw == "None":
         return None
-    out: dict[str, Any] = {}
-    if match:
-        for key in ("code", "subcode"):
-            raw = match.group(key)
-            out[key] = None if raw == "None" else int(raw) if raw.isdigit() else raw
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
+
+
+def graph_error(text: str) -> dict[str, Any] | None:
+    """Recover the FATAL Graph error from a child's log.
+
+    A child logs every Graph error it meets (a retried transient, a soft read failure)
+    before the one that actually stopped it, so the LAST `code=... subcode=...` line is the
+    fatal one — the first is history. `code` stays an int, including -1 (transport or
+    non-JSON reply). `outcome_unknown` is true when the fatal error's own text says the
+    request may have been applied (graph.OUTCOME_UNKNOWN_MARKER, or the launch/clone
+    "Outcome UNKNOWN" line that follows it)."""
+    matches = list(_GRAPH_ERROR_LINE.finditer(text))
+    if not matches:
+        traces = list(_GRAPH_TRACE.finditer(text))
+        if not traces or not traces[-1].group("trace"):
+            return None
+        return {"fbtrace_id": traces[-1].group("trace"),
+                "outcome_unknown": bool(_OUTCOME_UNKNOWN.search(text))}
+    last = matches[-1]
+    tail = text[last.start():]
+    out: dict[str, Any] = {
+        "code": _graph_scalar(last.group("code")),
+        "subcode": _graph_scalar(last.group("subcode")),
+    }
+    trace = _GRAPH_TRACE.search(tail)
     if trace and trace.group("trace"):
         out["fbtrace_id"] = trace.group("trace")
+    out["outcome_unknown"] = bool(_OUTCOME_UNKNOWN.search(tail))
     return out
 
 
@@ -505,6 +557,25 @@ def result_envelope(
         "error": error,
         "next_action": next_action,
     }
+
+
+def graph_failure(command: str, exc: graph.GraphError) -> dict[str, Any]:
+    """Envelope for a GraphError raised in-process (not via a child's stderr): kind `graph`,
+    the error's own as_dict() (code, subcode, fbtrace_id, outcome_unknown, ...), redacted."""
+    detail = json.loads(graph.redact(json.dumps(exc.as_dict(), ensure_ascii=False, default=str)))
+    if isinstance(exc, graph.CooldownError):
+        next_action = "The account is on a throttle cooldown; do not retry now (metaops pace shows the wait)."
+    elif exc.outcome_unknown:
+        next_action = ("Outcome unknown: the request may have been applied. Reconcile in Ads Manager "
+                       "before retrying a create.")
+    else:
+        next_action = None
+    return result_envelope(
+        command, False, "launcher_error",
+        error={"kind": "graph", "message": graph.redact(str(exc)), "graph": detail,
+               "outcome_unknown": bool(exc.outcome_unknown)},
+        next_action=next_action,
+    )
 
 
 def child_failure(command: str, phase: str, child: ChildResult) -> dict[str, Any]:
@@ -565,8 +636,10 @@ def build_single_plan(spec_path: pathlib.Path, state_arg: str | None = None,
             "Creates or resumes objects PAUSED. Never activates."
             if spec.get("create_status", "ACTIVE") == "PAUSED"
             else "Creates or resumes objects ACTIVE. apply requires --confirm SPEND and spends "
-                 "immediately on success."
+                 "immediately on success. Under a reused campaign.id the ad sets are created PAUSED "
+                 "and each is activated after its ads exist."
         ),
+        "warnings": launch.spec_warnings(spec),
     }
 
 
@@ -587,7 +660,10 @@ def validate_single_plan(
     plan: dict[str, Any],
     current_workspace: meta_workspace.Workspace | None = None,
     requested_profile: str | None = None,
+    check_age: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
+    """Re-validate a saved plan against its spec, workspace, doctor and asset receipts.
+    `check_age` is set by the commands that create or activate (apply, activate)."""
     spec_path = resolve_input(plan["spec_path"])
     spec = load_launch_spec(spec_path)
     current_sha = launch.spec_hash(spec)
@@ -603,7 +679,7 @@ def validate_single_plan(
     if graph.normalize_account(profile["ad_account_id"]) != plan.get("account_id"):
         raise MetaOpsError("plan account no longer matches its workspace profile")
     doctor_receipt, doctor_sha = require_doctor(
-        spec, plan.get("doctor_receipt"), str(profile["business_id"])
+        spec, plan.get("doctor_receipt"), str(profile["business_id"]), check_age
     )
     if str(doctor_receipt) != plan.get("doctor_receipt") or doctor_sha != plan.get("doctor_sha"):
         raise MetaOpsError("doctor receipt changed after plan; run doctor and plan again")
@@ -612,6 +688,7 @@ def validate_single_plan(
         workspace,
         profile_name,
         requires_catalog(spec),
+        check_age,
     )
     if str(asset_receipt) != plan.get("asset_receipt") or asset_sha != plan.get("asset_sha"):
         raise MetaOpsError("asset receipt changed after plan; verify assets and plan again")
@@ -743,10 +820,28 @@ def state_summary(state_path: pathlib.Path, spec_path: pathlib.Path | None = Non
     }
 
 
+def cooldown_key(value: str) -> str:
+    """`--clear-cooldown` argument → the key pacing.json stores: `123` / `act_123` → `act_123`;
+    `*` (global cooldown) and `obj:<id>` (per-object cooldown) are kept as they are."""
+    text = str(value).strip()
+    if text == "*" or re.fullmatch(r"obj:[0-9]+", text):
+        return text
+    key = graph.normalize_account(text)
+    if not re.fullmatch(r"act_[0-9]+", key):
+        raise MetaOpsError(
+            f"--clear-cooldown takes an ad account id (123 or act_123), '*' or obj:<id>; got {value!r}"
+        )
+    return key
+
+
 def command_pace(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     """Local pacing state: throttle cooldowns and last campaign create per account. No API call."""
     import time as _time
-    data = graph._pace_load()
+    cleared: dict[str, Any] | None = None
+    if args.clear_cooldown:
+        key = cooldown_key(args.clear_cooldown)
+        cleared = {"key": key, "existed": graph.clear_cooldown(key)}
+    data = graph._pace_load()  # read AFTER the clear so the printed state is the current one
     now = _time.time()
     cooldowns = {k: {"minutes_left": round((float(v) - now) / 60, 1),
                      "reason": (data.get("cooldown_reason") or {}).get(k)}
@@ -755,16 +850,19 @@ def command_pace(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     creates = {k: {"hours_ago": round((now - float(v)) / 3600, 2),
                    "next_create_in_min": max(0, round((gap_h * 3600 - (now - float(v))) / 60))}
                for k, v in (data.get("last_campaign_create") or {}).items()}
-    if args.clear_cooldown:
-        data.get("cooldown", {}).pop(args.clear_cooldown, None)
-        graph._pace_save(data)
-    return 0, result_envelope("pace", True, "pace", data={
+    out: dict[str, Any] = {
         "file": graph._pace_file(), "cooldowns": cooldowns, "campaign_creates": creates,
         "rules": {"throttle_cooldown_min": float(os.environ.get("METAOPS_THROTTLE_COOLDOWN_MIN",
                                                                graph.THROTTLE_COOLDOWN_MIN)),
                   "campaign_create_gap_h": gap_h},
-    }, next_action=("Do not touch accounts on cooldown; --clear-cooldown only when the operator asks."
-                    if cooldowns else None))
+    }
+    if cleared is not None:
+        out["cleared"] = cleared
+    return 0, result_envelope(
+        "pace", True, "pace", data=out,
+        next_action=("Do not touch accounts on cooldown; --clear-cooldown only when the operator asks."
+                     if cooldowns else None),
+    )
 
 
 def command_doctor(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
@@ -794,6 +892,12 @@ def command_doctor(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         raise MetaOpsError("use doctor --whoami or doctor --account ..., not both")
     if args.whoami and any((args.page, args.dataset, args.business, args.create_pbia, args.attach_pixel)):
         raise MetaOpsError("doctor --whoami is intake-only; do not combine it with Page/dataset mutations")
+    risk = bool(getattr(args, "risk", False))
+    if risk and (args.whoami or not args.account or not args.workspace_obj):
+        raise MetaOpsError(
+            "doctor --risk reads one profile's ad account: run it with a workspace profile, "
+            "not --whoami"
+        )
     child_args: list[str] = []
     if args.whoami or not args.account:
         child_args.append("--whoami")
@@ -802,10 +906,118 @@ def command_doctor(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     for flag, value in (("--page", args.page), ("--dataset", args.dataset), ("--business", args.business)):
         if value:
             child_args += [flag, value]
+    if args.account and args.workspace_obj:
+        # Only so the token table can say whether the profile still lacks a catalog token.
+        _, prof = args.workspace_obj.profile(args.profile)
+        if prof.get("catalog_id"):
+            child_args += ["--catalog", str(prof["catalog_id"])]
     if args.create_pbia:
         child_args.append("--create-pbia")
     if args.attach_pixel:
         child_args.append("--attach-pixel")
+    risk_path = tokens_path = None
+    if risk:
+        fd, risk_path = tempfile.mkstemp(prefix="metaops-risk.", suffix=".json")
+        os.close(fd)
+        child_args += ["--risk", "--risk-config",
+                       json.dumps(args.workspace_obj.risk_config(args.profile), sort_keys=True),
+                       "--risk-out", risk_path]
+    # probe.py writes its token table here when several token variables are set (env, not argv,
+    # so a single-token doctor sends the child exactly the arguments it always did).
+    fd, tokens_path = tempfile.mkstemp(prefix="metaops-tokens.", suffix=".json")
+    os.close(fd)
+    previous_tokens_out = os.environ.get("METAOPS_TOKENS_OUT")
+    os.environ["METAOPS_TOKENS_OUT"] = tokens_path
+    target = doctor_path(args.account) if args.account else None
+    try:
+        try:
+            code, payload = _doctor_checks(args, scope, child_args)
+        except BaseException as exc:
+            # A run that died on a definite error must not leave the earlier passing receipt in
+            # force; a throttle / local cooldown / Ctrl-C proved nothing either way, so it stays.
+            if not (_proves_nothing(exc) or isinstance(exc, KeyboardInterrupt)):
+                _invalidate_receipt(target)
+            raise
+        risk_report = _read_report(risk_path)
+        tokens_report = _read_report(tokens_path)
+    finally:
+        if previous_tokens_out is None:
+            os.environ.pop("METAOPS_TOKENS_OUT", None)
+        else:
+            os.environ["METAOPS_TOKENS_OUT"] = previous_tokens_out
+        for leftover in (risk_path, tokens_path):
+            if leftover:
+                pathlib.Path(leftover).unlink(missing_ok=True)
+    if code != 0 or not payload.get("ok"):
+        if _invalidate_receipt(target):
+            payload.setdefault("data", {})["receipt_invalidated"] = str(target)
+    if tokens_report:
+        payload.setdefault("data", {})["tokens"] = tokens_report
+    if risk:
+        _attach_risk(payload, risk_report)
+    return code, payload
+
+
+def _read_report(path: str | None) -> dict[str, Any] | None:
+    """A JSON file the probe child wrote for the parent; None when absent, empty or unreadable."""
+    if not path:
+        return None
+    try:
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+        return json.loads(text) if text.strip() else None
+    except (OSError, ValueError):
+        return None
+
+
+def _attach_risk(payload: dict[str, Any], report: dict[str, Any] | None) -> None:
+    """Put the probe's risk snapshot into the doctor envelope. The child never fails on it; a
+    missing report means the child died before the risk gate ran."""
+    data = payload.setdefault("data", {})
+    if report is None:
+        data["risk_findings"] = []
+        data["risk"] = {"available": False,
+                        "reason": "probe.py wrote no risk report (it stopped before the risk gate)"}
+        return
+    data["risk_findings"] = report["risk_findings"]
+    data["risk"] = {key: report[key] for key in (
+        "schema", "checked_at", "account_id", "snapshot", "counts", "errors", "thresholds",
+        "unverified_fields", "ui_only", "note") if key in report}
+    counts = report.get("counts") or {}
+    summary = (f"Risk snapshot: {counts.get('high', 0)} high, {counts.get('warn', 0)} warn, "
+               f"{counts.get('info', 0)} info (your own priors, not Meta rules; see data.risk_findings).")
+    payload["next_action"] = f"{payload.get('next_action') or ''} {summary}".strip()
+
+
+def _proves_nothing(exc: BaseException) -> bool:
+    """A local cooldown, a throttle or an unknown-outcome transport error says nothing about the
+    account; only a definite failure may void a passing receipt (deleting on a throttle would
+    force a re-plan and more validate_only POSTs straight after the throttle)."""
+    if isinstance(exc, graph.CooldownError):
+        return True
+    if isinstance(exc, graph.GraphError):
+        code = exc.code
+        if code in graph.ACCOUNT_THROTTLE_CODES or code in graph.GLOBAL_THROTTLE_CODES:
+            return True
+        if isinstance(code, int) and 80000 <= code <= 80999:
+            return True
+        return bool(getattr(exc, "outcome_unknown", False))
+    return False
+
+
+def _invalidate_receipt(path: pathlib.Path | None) -> bool:
+    """Delete a receipt the latest (failed) run supersedes. True when a file was removed."""
+    if path is None:
+        return False
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _doctor_checks(
+    args: argparse.Namespace, scope: str, child_args: list[str]
+) -> tuple[int, dict[str, Any]]:
     child = run_child("probe.py", child_args, args.timeout)
     echo_child(child)
     if not child.ok:
@@ -901,8 +1113,9 @@ def command_plan(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "validated",
         artifacts={"plan": str(plan_path), "dry_state": plan["dry_state_path"]},
         data={"run_id": plan["run_id"], "account_id": plan["account_id"],
-              "spec_sha": plan["spec_sha"], "validation_scope": plan["validation_scope"], "swap": swap},
-        next_action=f"Review the plan, then run: metaops.py apply --plan {plan_path}",
+              "spec_sha": plan["spec_sha"], "validation_scope": plan["validation_scope"], "swap": swap,
+              "warnings": plan.get("warnings", [])},
+        next_action=f"Review the plan (warnings: {len(plan.get('warnings', []))}), then run: metaops.py apply --plan {plan_path}",
     )
 
 
@@ -944,15 +1157,49 @@ def command_workspace_validate(args: argparse.Namespace) -> tuple[int, dict[str,
     )
 
 
+# Checks asset_graph.verify_assets runs only for scope `all` (catalog / product sets); every
+# other check is a core check shared by both scopes.
+CATALOG_ONLY_CHECKS = ("catalog_", "product_set:")
+
+
+def _invalidate_asset_receipts(profile: str, core_failed: bool) -> list[str]:
+    """Delete the asset receipt(s) a failed `assets verify` supersedes; returns removed paths.
+    The `all` receipt always goes (it is what just failed, or a superset of what failed); the
+    `core` one only when a core check failed, since `all` includes every core check."""
+    removed: list[str] = []
+    for name in ("all", "core") if core_failed else ("all",):
+        path = asset_receipt_path(profile, name)
+        if _invalidate_receipt(path):
+            removed.append(str(path))
+    return removed
+
+
 def command_assets_verify(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     if not args.workspace_obj:
         raise MetaOpsError("assets verify requires --workspace")
     try:
+        profile_name, _profile = args.workspace_obj.profile(args.profile)
+    except meta_workspace.WorkspaceError as exc:
+        raise MetaOpsError(str(exc)) from exc
+    try:
         report = asset_graph.verify_assets(args.workspace_obj, args.profile, args.scope)
     except (meta_workspace.WorkspaceError, graph.GraphError) as exc:
+        # A definite error voids the earlier receipts (all ⊇ core); a throttle or local cooldown
+        # proved nothing, so the passing receipts stay.
+        if not _proves_nothing(exc):
+            _invalidate_asset_receipts(profile_name, core_failed=True)
         raise MetaOpsError(str(exc)) from exc
     ok = bool(report["ready"])
     artifacts = {"workspace": str(args.workspace_obj.path)}
+    if not ok:
+        # A failed run supersedes the earlier passing receipt of the same scope. Scope `all`
+        # includes every core check, so a failed core check also voids the core receipt; a
+        # failure confined to catalog/product-set checks leaves it alone.
+        core_failed = args.scope == "core" or any(
+            not str(name).startswith(CATALOG_ONLY_CHECKS) for name in report["failed_checks"]
+        )
+        invalidated = _invalidate_asset_receipts(profile_name, core_failed)
+        report = {**report, "receipts_invalidated": invalidated}
     if ok:
         receipt_path = asset_receipt_path(report["profile"], args.scope)
         atomic_json(receipt_path, {
@@ -1011,7 +1258,7 @@ def command_assets_set_products(args: argparse.Namespace) -> tuple[int, dict[str
     ids = [value.strip() for value in args.retailer_ids.split(",") if value.strip()]
     if not ids:
         raise MetaOpsError("--retailer-ids must contain at least one retailer id")
-    require_assets(args.workspace_obj, profile_name, False)
+    require_assets(args.workspace_obj, profile_name, False, check_age=True)
     require_doctor(
         {
             "account_id": profile["ad_account_id"],
@@ -1019,6 +1266,7 @@ def command_assets_set_products(args: argparse.Namespace) -> tuple[int, dict[str
             "pixel_id": profile["dataset_id"],
         },
         business_id=str(profile["business_id"]),
+        check_age=True,  # set-products mutates live product sets: same freshness bar as apply
     )
     binding = asset_graph.verify_product_set_binding(
         args.workspace_obj, profile_name, args.set
@@ -1138,6 +1386,13 @@ def command_assets_swap(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         raise MetaOpsError("assets swap requires --workspace")
     if args.confirm != "SWAP":
         raise MetaOpsError("assets swap requires the literal --confirm SWAP")
+    if args.interval < MIN_SWAP_INTERVAL_S and not graph._pace_override():
+        raise MetaOpsError(
+            f"--interval {args.interval} is under the {MIN_SWAP_INTERVAL_S}s pacing floor (each poll "
+            "is a burst of Graph reads; FIELD 2026-09-27 automation ban). Use "
+            f"--interval {MIN_SWAP_INTERVAL_S} or higher; METAOPS_PACE_OVERRIDE=1 only if the operator "
+            "explicitly asks."
+        )
     if args.watch and args.dry_run:
         raise MetaOpsError("--watch and --dry-run are exclusive")
     if args.watch and args.revert:
@@ -1205,6 +1460,7 @@ def command_assets_swap(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 
 
 REVIEW_STATUSES = {"PENDING_REVIEW", "IN_PROCESS", "PREAPPROVED"}
+MIN_SWAP_INTERVAL_S = 300  # `assets swap --interval` floor; METAOPS_PACE_OVERRIDE=1 lifts it
 
 
 def feed_binding(args: argparse.Namespace) -> tuple[str, dict[str, Any], str]:
@@ -1383,9 +1639,9 @@ def command_apply(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             "refusing without the literal --confirm SPEND"
         )
     plan_path, plan = load_plan(args.plan, {SINGLE_PLAN_SCHEMA})
-    spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile)
+    spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile, check_age=True)
     with state_lock(state_path), state_lock(spec_path):
-        spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile)
+        spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile, check_age=True)
         refresh = getattr(args, "refresh_start", None)
         if refresh:
             validate_future_start(refresh)
@@ -1460,7 +1716,7 @@ def command_verify(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 
 def command_activate(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     plan_path, plan = load_plan(args.plan, {SINGLE_PLAN_SCHEMA})
-    spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile)
+    spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile, check_age=True)
     if args.confirm != "SPEND":
         raise MetaOpsError("activation requires the literal --confirm SPEND")
     if args.confirm_ui != "REVIEWED":
@@ -1470,7 +1726,7 @@ def command_activate(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         validate_future_start(args.refresh_start)
         child_args += ["--refresh-start", args.refresh_start]
     with state_lock(state_path), state_lock(spec_path):
-        spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile)
+        spec_path, state_path = validate_single_plan(plan, args.workspace_obj, args.profile, check_age=True)
         if not args.refresh_start:
             spec = load_launch_spec(spec_path)
             starts = [
@@ -1623,7 +1879,9 @@ def workspace_bulk_candidate(
     if row.get("overrides"):
         candidate = bulk.deep_merge(candidate, row["overrides"])
     if row.get("media"):
-        candidate = bulk.apply_media(candidate, row["media"])
+        tag = str(row.get("tag") or str(row.get("account_id", "")).replace("act_", ""))
+        media = {str(k).replace("{tag}", tag): v for k, v in row["media"].items()}
+        candidate = bulk.apply_media(bulk.expand_tags(candidate, tag), media)
     return candidate
 
 
@@ -1699,7 +1957,10 @@ def validate_bulk_plan(
     plan: dict[str, Any],
     current_workspace: meta_workspace.Workspace | None = None,
     receipt_accounts: set[str] | None = None,
+    check_age: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
+    """Re-validate a saved bulk plan. `check_age` (bulk-apply, bulk-activate) also enforces
+    the receipt freshness TTL; `status` re-reads the same bindings without it."""
     template_path = resolve_input(plan["template_path"])
     accounts_path = resolve_input(plan["accounts_path"])
     template = read_json(template_path, "template")
@@ -1750,7 +2011,7 @@ def validate_bulk_plan(
         }
         _, profile = workspace.profile(row["workspace_profile"])
         receipt_path, receipt_sha = require_doctor(
-            routing, binding["path"], str(profile["business_id"])
+            routing, binding["path"], str(profile["business_id"]), check_age
         )
         if receipt_sha != binding.get("sha"):
             raise MetaOpsError(f"doctor receipt changed after bulk-plan: {receipt_path}")
@@ -1763,7 +2024,7 @@ def validate_bulk_plan(
                 raise MetaOpsError(f"bulk plan has no asset receipt for profile {profile_name}")
             receipt_path, receipt_sha = validate_asset_receipt(
                 resolve_input(binding["path"]), workspace, profile_name,
-                bool(binding.get("catalog_required")),
+                bool(binding.get("catalog_required")), check_age,
             )
             if receipt_sha != binding.get("sha"):
                 raise MetaOpsError(f"asset receipt changed after bulk-plan: {receipt_path}")
@@ -1924,7 +2185,7 @@ def command_bulk_apply(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             "refusing without the literal --confirm SPEND"
         )
     plan_path, plan = load_plan(args.plan, {BULK_PLAN_SCHEMA})
-    template_path, accounts_path = validate_bulk_plan(plan, args.workspace_obj)
+    template_path, accounts_path = validate_bulk_plan(plan, args.workspace_obj, check_age=True)
     child_args = bulk_args(plan, template_path, accounts_path)
     if args.verify:
         child_args.append("--verify")
@@ -1946,7 +2207,7 @@ def command_bulk_apply(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     {"spec_sha": item["spec_sha"], "account_id": item["account_id"]},
                     state_path,
                 )
-        template_path, accounts_path = validate_bulk_plan(plan, args.workspace_obj)
+        template_path, accounts_path = validate_bulk_plan(plan, args.workspace_obj, check_age=True)
         for item in validate_bulk_items(plan):
             blocker = _active_start_blocker(resolve_input(item["spec_path"]))
             if blocker:
@@ -1970,7 +2231,7 @@ def command_bulk_apply(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 def command_bulk_activate(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     plan_path, plan = load_plan(args.plan, {BULK_PLAN_SCHEMA})
     account = graph.normalize_account(args.account)
-    validate_bulk_plan(plan, args.workspace_obj, {account})
+    validate_bulk_plan(plan, args.workspace_obj, {account}, check_age=True)
     items = validate_bulk_items(plan)
     selected = [item for item in items if item["account_id"] == account]
     if len(selected) != 1:
@@ -1987,7 +2248,7 @@ def command_bulk_activate(args: argparse.Namespace) -> tuple[int, dict[str, Any]
         validate_future_start(args.refresh_start)
         child_args += ["--refresh-start", args.refresh_start]
     with state_lock(state_path), state_lock(spec_path):
-        validate_bulk_plan(plan, args.workspace_obj, {account})
+        validate_bulk_plan(plan, args.workspace_obj, {account}, check_age=True)
         validate_bulk_items(plan)
         require_state_binding(
             {"spec_sha": item["spec_sha"], "account_id": item["account_id"]}, state_path
@@ -2087,7 +2348,9 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--dry-run", action="store_true", help="show per-set verdicts, change nothing")
     action.add_argument("--watch", action="store_true",
                         help="poll review and swap each set the moment its ads are approved")
-    action.add_argument("--interval", type=int, default=300, help="--watch poll seconds (default 300; pacing, FIELD 2026-09-27)")
+    action.add_argument("--interval", type=int, default=MIN_SWAP_INTERVAL_S,
+                        help=f"--watch poll seconds (default and minimum {MIN_SWAP_INTERVAL_S}; a lower "
+                             "value is refused unless METAOPS_PACE_OVERRIDE=1; pacing, FIELD 2026-09-27)")
     action.add_argument("--max-wait", type=int, default=12 * 3600, help="--watch give-up seconds (default 12 h)")
     action.add_argument("--paused-ok", action="store_true",
                         help="treat ADSET_PAUSED/CAMPAIGN_PAUSED ads as approved (you saw them ACTIVE); "
@@ -2100,7 +2363,9 @@ def parser() -> argparse.ArgumentParser:
     action.set_defaults(handler=command_assets_swap)
 
     p = sub.add_parser("pace", help="local pacing state: throttle cooldowns, last campaign create per account")
-    p.add_argument("--clear-cooldown", metavar="ACT_ID", help="drop one cooldown (only when the operator asks)")
+    p.add_argument("--clear-cooldown", metavar="ACT_ID",
+                   help="drop one cooldown (123 or act_123; '*' for the global one) and print the "
+                        "state after the clear (only when the operator asks)")
     p.set_defaults(handler=command_pace)
 
     p = sub.add_parser("doctor", help="token/account preflight through probe.py")
@@ -2115,6 +2380,12 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--business")
     p.add_argument("--create-pbia", action="store_true")
     p.add_argument("--attach-pixel", action="store_true")
+    p.add_argument(
+        "--risk", action="store_true",
+        help="append a read-only risk snapshot (account age / spend / balance / spend cap / status, "
+             "pixel, Page, disapproved ratio) and risk_findings; thresholds are your own priors "
+             "(workspace `risk` block), not Meta rules; never changes the doctor verdict",
+    )
     p.set_defaults(handler=command_doctor)
 
     p = sub.add_parser("media", help="upload profile-scoped images/videos and write a manifest")
@@ -2242,7 +2513,7 @@ def main() -> int:
         # Only the offline manifest check may run without the workspace's token.
         args.workspace_obj = configure_workspace(
             args.workspace,
-            require_token=args.handler is not command_workspace_validate,
+            require_token=args.handler is not command_workspace_validate and not getattr(args, "offline_ok", False),
         )
         require_command_workspace(args)
         if args.workspace_obj:
@@ -2256,7 +2527,26 @@ def main() -> int:
             except meta_workspace.WorkspaceError:
                 pass
         code, payload = args.handler(args)
-    except (MetaOpsError, meta_workspace.WorkspaceError, graph.GraphError, KeyError, TypeError,
+    except graph.GraphError as exc:
+        # A Graph failure inside an in-process handler is an operation failure, not a launcher
+        # precondition: keep its code/subcode/trace and whether the call may have applied.
+        code, payload = 1, graph_failure(args.command, exc)
+    except SystemExit as exc:
+        # graph.py and helpers exit with a message on a missing META_TOKEN / META_PROXY, a
+        # refused Graph path or a pacing refusal. With --json the caller must still get one
+        # envelope on stdout rather than a bare stderr line.
+        if exc.code is None or exc.code == 0:
+            raise
+        message = graph.redact(exc.code if isinstance(exc.code, str) else f"exited with status {exc.code}")
+        payload = result_envelope(
+            args.command,
+            False,
+            "launcher_error",
+            error={"kind": "pacing" if isinstance(exc, graph.PacingError) else "precondition",
+                   "message": message},
+        )
+        code = exc.code if isinstance(exc.code, int) else 2
+    except (MetaOpsError, meta_workspace.WorkspaceError, KeyError, TypeError,
             ValueError, OSError, subprocess.SubprocessError) as exc:
         message = graph.redact(str(exc))
         payload = result_envelope(

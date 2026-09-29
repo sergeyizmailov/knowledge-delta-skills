@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import graph
+import tokens
 from meta_workspace import Workspace
 
-# Meta's own first-party apps. Tokens scraped from an Ads Manager session belong to these,
-# and they are never owned by a customer business portfolio.
-FIRST_PARTY_APP_IDS = {"119211728144504"}  # Power Editor (`02`)
+# Meta's own first-party apps. Tokens scraped from a Meta web surface belong to these (EAAB Ads
+# Manager, EAAI, EAAG, EAAH, EAAd: tokens.py), and they are never owned by a customer business
+# portfolio.
+FIRST_PARTY_APP_IDS = {cls.app_id for cls in tokens.FIRST_PARTY.values()}
 
 
 def _ids(rows: list[dict[str, Any]]) -> set[str]:
@@ -78,6 +81,19 @@ def resolve_token_kind(business_id: str, profile: dict[str, Any]) -> str:
     declared = str(profile.get("token_kind") or "auto")
     if declared in ("system_user", "user"):
         return declared
+    # A scraped first-party token (EAAB, EAAI, EAAG, EAAH, EAAd) is a user session by
+    # construction and cannot self-debug (#100), so debug_token and the System User listing are
+    # wasted calls. The prefix is only a guess (an own-app System User token can share it), so one
+    # GET /app must return the class's own app id before the shortcut is taken; otherwise fall
+    # through to the generic path below.
+    guess = tokens.by_prefix(os.environ.get("META_TOKEN", ""))
+    if guess is not None:
+        try:
+            app = graph.get("app", params={"fields": "id"}, context="token kind app")
+            if str(app.get("id")) == guess.app_id:
+                return "user"
+        except graph.GraphError:
+            pass
     try:
         data = graph.get(
             "debug_token", params={"input_token": graph.token()}, context="token kind debug_token"

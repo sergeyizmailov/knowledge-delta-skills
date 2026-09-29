@@ -48,12 +48,12 @@ follow our rules", siblings lived — pacing, not pipe (`02` §8, `16` § Pacing
 | Budget ramp / mass status | `metaops edit status/budget/rename/ramp` (±20% + late-day guard, `--confirm SPEND` to activate/raise, `PAUSE` to stop delivery) | `POST /{id}` |
 | Comment auto-hide by trigger words | `metaops comments hide\|delete --matching REGEX --confirm HIDE\|DELETE` (Page token) | `GET /{post}/comments`, `POST /{comment}?is_hidden=true` |
 | Spend/status/ban dashboard, Telegram alerts | `metaops monitor --telegram` (verdicts incl. STALL, JSONL, Bot API via `TG_BOT_TOKEN`/`TG_CHAT_ID`) | `GET /act_X?fields=account_status…`, `/insights`, `/ads?fields=effective_status` |
-| Rejected-ad review + appeal | `metaops review [--previews]` (ad_review_feedback, issues_info); **appeal is UI-only** | `issues_info` read only |
+| Rejected-ad review + appeal | `metaops review [--previews]` (ad_review_feedback, issues_info); **appeal is UI-only**; operator rule: on a disapproval do not edit or resubmit | `issues_info` read only |
 | Pixel attach to account | `metaops business pixel create/share/shared`, `metaops doctor --attach-pixel`; `business capi test` proves the dataset receives events | `POST /act_X/adspixels`, `POST /{pixel}/shared_accounts` |
 | Page avatar/cover/about writes | `metaops page set --avatar/--cover/--about/--website --confirm PAGE`. **Create+rename: UI-only** | `POST /{page}/picture`, `/{page}` |
 | Card binding, auto-topup, balance payment | **UI-only** — no billing writes in Marketing API. Agency crypto topup or persona's browser (`03`) | — |
 | BM creation, new ad account under BM | BM: UI-only. Ad account: `metaops business adaccount create` (new-BM cap = 1 account, `03`); users/partners: `business user invite\|assign`, `partner share` | partial |
-| Tracker cost push (Keitaro/Binom) | `insights.py --csv` → `tracker-ops/01 update_costs` | `/insights` |
+| Tracker cost push (Keitaro/Binom) | `metaops keitaro push` (dry run, then `--confirm PUSH`; key `sub_id_6`, `16` Keitaro, `tracker-ops/01`); Binom has no script | `/insights` |
 | Per-creative stats every 15 min, cross-account (≥15 min is the floor on Limited tier, `16` § Pacing) | `metaops insights leaderboard --accounts …` (join on `ad_name` = creative name only within one currency; mixed currencies are rejected); `insights pull --csv` → tracker | `/insights` |
 | Team seats/roles | `metaops business user invite --role EMPLOYEE\|ADMIN` | — |
 | "AI assistant over your data" (cabinet.partners) | this skill + `insights.py` output | — |
@@ -63,8 +63,8 @@ follow our rules", siblings lived — pacing, not pipe (`02` §8, `16` § Pacing
 
 No vendor documents attribution/Advantage+/multi-advertiser defaults [not found]; payloads
 omit the fields, so Meta's defaults apply: **7d click, every enhancement ON, multi-advertiser
-ON**. Quiet reason "same creative performs differently from the tool" — ours pins 1/1/1, all
-OPT_OUT (`SKILL.md` § Launch defaults).
+ON**. Quiet reason "same creative performs differently from the tool" — ours pins 1/1/1 by default
+(casino Purchase: 7d click / 1d view, set explicitly) and all OPT_OUT (`SKILL.md` § Launch defaults).
 
 ## Volume/hygiene practices (practitioner, cpa.rip/partnerkin)
 

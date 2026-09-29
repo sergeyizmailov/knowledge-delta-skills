@@ -3,7 +3,10 @@
 Research 2026-09-27 (Meta help, Jon Loomer 2025-26, Foxwell 2025, aksanov 08.2026, CPA Lenta 03.2026, FB-Killa /
 Traffic Cardinal / Traffhub gambling guides, CPA.RIP, conversion.im). [К] = 2+ sources agree, [1] = single source.
 Arbitrage sources are mostly 2019-2023; there is **no consensus for gambling** — the table is what people set,
-not a proven optimum. Mechanics (immutable after create, `window_days`, 1885501) → `04`.
+not a proven optimum. Mechanics (immutable after create, `window_days`, 1885501) → `04`. `plan` WARNS on a PURCHASE ad set
+without an explicit `attribution` (silent default is 1d/1d/1d, not the casino 7d click / 1d view).
+`insights pull` reports 1d click / 1d view unless told otherwise, whatever the ad set uses: pass
+`--action-attribution-windows 7d_click,1d_view` to match a casino ad set (`16` Inspect; `metaops review --tree` shows each ad set's `attribution_spec`).
 
 ## Pick the window (set explicitly in the spec, every ad set)
 

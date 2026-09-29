@@ -71,7 +71,7 @@ Everything else: **self-compliance** (conditions, no submission — alcohol, wei
 
 Definition wide: "anything of monetary value as part of a method of entry and prize" — betting, lotteries, raffles, casino, fantasy sports incl. DFS, bingo, poker, skill tournaments, sweepstakes, trial-then-pay games.
 
-**19 unsupported markets** (no gambling/social-casino ads, authorization irrelevant): Azerbaijan · Bangladesh · Cambodia · Egypt · Hong Kong · India · Indonesia · Korea · Kyrgyzstan · Malaysia · Mongolia · Myanmar · Pakistan · Philippines · Saudi Arabia · Singapore · Taiwan · Thailand · Vietnam. 🔺 List confirmed live 2026-08-27; "Feb 2026 expansion" date cited by practitioners not tied to a dated official announcement.
+**19 unsupported markets** (no gambling/social-casino ads, authorization irrelevant): Azerbaijan · Bangladesh · Cambodia · Egypt · Hong Kong · India · Indonesia · Korea · Kyrgyzstan · Malaysia · Mongolia · Myanmar · Pakistan · Philippines · Saudi Arabia · Singapore · Taiwan · Thailand · Vietnam. 🔺 List confirmed live 2026-08-27 (`meta-ads/07` §3 dates it 2026-09-25; not re-fetched 2026-09-29, unverified); "Feb 2026 expansion" date cited by practitioners not tied to a dated official announcement.
 
 Allowed without permission: brick-and-mortar venue ads not facilitating online play · state/govt lotteries where advertiser is direct operator · retail prize promotions where gambling isn't core business · genuinely free-to-play non-simulating games.
 

@@ -70,6 +70,8 @@ A Marketing API version is available **~12 months TOTAL** (v24.0 ran 2025-10-08 
 | v25.0 | 2026-02-18 | supported, TBD | — |
 | **v26.0** | **2026-07-29** | **current, no expiry** | Reference for `14`/`02`§9. Removed `delivery_estimate.daily_outcomes_curve`/`budget_guardrail`/`estimate_dau`; HEC-F campaigns require explicit `targeting_automation.advantage_audience`; IG Explore placement gone; Messenger `story` position removed; poll ads unsupported |
 
+Dates re-checked against the Graph changelog on 2026-09-29: v24.0 2025-10-08 (available until 2026-10-06), v25.0 2026-02-18, v26.0 2026-07-29; end dates for v25/v26 still TBD there.
+
 Any version named in a reference is version-bound — re-verify against current major before automating.
 
 ## 4.2 Hard limits (cross-file)

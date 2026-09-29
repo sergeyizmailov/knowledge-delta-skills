@@ -90,7 +90,8 @@ def _require_confirm(ctx: Any, args: argparse.Namespace) -> None:
         raise ctx.MetaOpsError("this create requires the literal --confirm CREATE")
 
 
-def _paginate(ctx: Any, path: str, fields: str, limit: int | None = None) -> list[dict[str, Any]]:
+def _paginate(ctx: Any, path: str, fields: str, limit: int | None = None,
+              capability: str | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     after: str | None = None
     while True:
@@ -100,7 +101,7 @@ def _paginate(ctx: Any, path: str, fields: str, limit: int | None = None) -> lis
         params: dict[str, Any] = {"fields": fields, "limit": page_limit}
         if after:
             params["after"] = after
-        payload = ctx.graph.get(path, params=params, context=path)
+        payload = ctx.graph.get(path, params=params, context=path, capability=capability)
         rows.extend(payload.get("data", []))
         if limit is not None and len(rows) >= limit:
             return rows[:limit]
@@ -181,7 +182,7 @@ def command_catalog_list(args: argparse.Namespace, ctx: Any) -> tuple[int, dict[
     business_id = str(profile.get("business_id") or "")
     if not business_id:
         raise ctx.MetaOpsError(f"profile {profile_name} has no business_id")
-    rows = _paginate(ctx, f"{business_id}/owned_product_catalogs", CATALOG_FIELDS)
+    rows = _paginate(ctx, f"{business_id}/owned_product_catalogs", CATALOG_FIELDS, capability="catalog")
     return 0, ctx.result_envelope(
         "catalog list", True, "listed",
         data={"profile": profile_name, "business_id": business_id, "count": len(rows), "catalogs": rows},
@@ -196,7 +197,8 @@ def command_catalog_access(args: argparse.Namespace, ctx: Any) -> tuple[int, dic
     system_user_id = str(profile.get("system_user_id") or "")
     checks: dict[str, bool] = {}
     detail: dict[str, Any] = {}
-    catalog = ctx.graph.get(catalog_id, params={"fields": CATALOG_FIELDS}, context="catalog access")
+    catalog = ctx.graph.get(catalog_id, params={"fields": CATALOG_FIELDS}, context="catalog access",
+                            capability="catalog")
     catalog_business = str((catalog.get("business") or {}).get("id") or "")
     checks["catalog_owned_by_business"] = catalog_business == business_id
     detail["catalog_business_id"] = catalog_business
@@ -229,7 +231,7 @@ def command_catalog_feed_create(args: argparse.Namespace, ctx: Any) -> tuple[int
     # Twin feeds poll the same URL on the same schedule: dedup by name so a retry
     # after outcome_unknown reuses the feed instead of scheduling a second fetch.
     hit = _find_by_name(
-        _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS), str(args.name)
+        _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS, capability="catalog"), str(args.name)
     )
     if hit is not None:
         feed_id = str(hit.get("id"))
@@ -246,11 +248,12 @@ def command_catalog_feed_create(args: argparse.Namespace, ctx: Any) -> tuple[int
     if args.update_only:
         data["deletion_enabled"] = False
     try:
-        resp = ctx.graph.post(f"{catalog_id}/product_feeds", data, context="catalog feed create")
+        resp = ctx.graph.post(f"{catalog_id}/product_feeds", data, context="catalog feed create",
+                              capability="catalog")
     except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name
         if bool(getattr(exc, "outcome_unknown", False)):
             hit = _find_by_name(
-                _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS), str(args.name)
+                _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS, capability="catalog"), str(args.name)
             )
             if hit is not None:
                 return 0, ctx.result_envelope(
@@ -275,7 +278,7 @@ def command_catalog_feed_create(args: argparse.Namespace, ctx: Any) -> tuple[int
 def command_catalog_feed_list(args: argparse.Namespace, ctx: Any) -> tuple[int, dict[str, Any]]:
     profile_name, profile = _profile(ctx, args)
     catalog_id = _catalog_id(profile, ctx)
-    rows = _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS)
+    rows = _paginate(ctx, f"{catalog_id}/product_feeds", FEED_FIELDS, capability="catalog")
     return 0, ctx.result_envelope(
         "catalog feed list", True, "listed",
         data={"profile": profile_name, "catalog_id": catalog_id, "count": len(rows), "feeds": rows},
@@ -286,7 +289,8 @@ def command_catalog_feed_list(args: argparse.Namespace, ctx: Any) -> tuple[int, 
 def command_catalog_feed_uploads(args: argparse.Namespace, ctx: Any) -> tuple[int, dict[str, Any]]:
     profile_name, _profile_data, feed_id = ctx.feed_binding(args)
     import feed_upload
-    rows = _paginate(ctx, f"{feed_id}/uploads", feed_upload.UPLOAD_FIELDS, limit=args.limit)
+    rows = _paginate(ctx, f"{feed_id}/uploads", feed_upload.UPLOAD_FIELDS, limit=args.limit,
+                     capability="catalog")
     return 0, ctx.result_envelope(
         "catalog feed uploads", True, "listed",
         data={"profile": profile_name, "feed_id": feed_id, "count": len(rows), "uploads": rows},
@@ -318,7 +322,7 @@ def command_catalog_set_create(args: argparse.Namespace, ctx: Any) -> tuple[int,
     # wire (double-encoding it ourselves would silently no-op the create's filter — 04).
     # Twin sets with the same name would split the catalog audience: dedup by name.
     hit = _find_by_name(
-        _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS), str(args.name)
+        _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS, capability="catalog"), str(args.name)
     )
     if hit is not None:
         set_id = str(hit.get("id"))
@@ -333,11 +337,12 @@ def command_catalog_set_create(args: argparse.Namespace, ctx: Any) -> tuple[int,
         )
     data = {"name": args.name, "filter": new_filter}
     try:
-        resp = ctx.graph.post(f"{catalog_id}/product_sets", data, context="catalog set create")
+        resp = ctx.graph.post(f"{catalog_id}/product_sets", data, context="catalog set create",
+                              capability="catalog")
     except Exception as exc:  # noqa: BLE001 - reconcile outcome_unknown by name
         if bool(getattr(exc, "outcome_unknown", False)):
             hit = _find_by_name(
-                _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS), str(args.name)
+                _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS, capability="catalog"), str(args.name)
             )
             if hit is not None:
                 return 0, ctx.result_envelope(
@@ -361,7 +366,7 @@ def command_catalog_set_create(args: argparse.Namespace, ctx: Any) -> tuple[int,
 def command_catalog_set_list(args: argparse.Namespace, ctx: Any) -> tuple[int, dict[str, Any]]:
     profile_name, profile = _profile(ctx, args)
     catalog_id = _catalog_id(profile, ctx)
-    rows = _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS)
+    rows = _paginate(ctx, f"{catalog_id}/product_sets", SET_FIELDS, capability="catalog")
     return 0, ctx.result_envelope(
         "catalog set list", True, "listed",
         data={"profile": profile_name, "catalog_id": catalog_id, "count": len(rows), "product_sets": rows},
@@ -376,7 +381,8 @@ def command_catalog_products_list(args: argparse.Namespace, ctx: Any) -> tuple[i
     profile_name, profile = _profile(ctx, args)
     catalog_id = _catalog_id(profile, ctx)
     path = f"{args.set_id}/products" if args.set_id else f"{catalog_id}/products"
-    rows = _paginate(ctx, path, "id,retailer_id,name,availability,price", limit=args.limit)
+    rows = _paginate(ctx, path, "id,retailer_id,name,availability,price", limit=args.limit,
+                     capability="catalog")
     return 0, ctx.result_envelope(
         "catalog products list", True, "listed",
         data={"profile": profile_name, "catalog_id": catalog_id, "set_id": args.set_id,
@@ -459,7 +465,8 @@ def command_catalog_products_batch(args: argparse.Namespace, ctx: Any) -> tuple[
     }
     if args.method == "UPDATE":
         data["allow_upsert"] = True
-    resp = ctx.graph.post(f"{catalog_id}/items_batch", data, context="catalog products batch")
+    resp = ctx.graph.post(f"{catalog_id}/items_batch", data, context="catalog products batch",
+                          capability="catalog")
     handles = resp.get("handles") or ([resp["handle"]] if resp.get("handle") else [])
     if not handles:
         raise ctx.MetaOpsError(f"items_batch response carried no handle: {resp}")
@@ -472,6 +479,7 @@ def command_catalog_products_batch(args: argparse.Namespace, ctx: Any) -> tuple[
             f"{catalog_id}/check_batch_request_status",
             params={"handle": handle, "fields": BATCH_STATUS_FIELDS},
             context="catalog products batch status",
+            capability="catalog",
         )
         status_item = _batch_status_item(status_payload)
         if _batch_finished(status_item.get("status")) or time.monotonic() >= deadline:

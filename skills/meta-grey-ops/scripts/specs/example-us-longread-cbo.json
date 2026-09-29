@@ -1,0 +1,171 @@
+{
+  "run_id": "us-ok-longread-cbo-2026-10-02",
+  "account_id": "act_REPLACE_ME",
+  "page_id": "REPLACE_ME",
+  "instagram_user_id": "auto",
+  "pixel_id": "REPLACE_ME",
+  "currency": "USD",
+  "lint": "strict",
+  "url_tags": "utm_source=fb&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&adset={{adset.name}}",
+  "_note": "US / Oklahoma longread, CBO $60/day, bid cap on every ad set, Purchase on a pixel, 1-5-1 (five ad sets, one image ad each, each ad its own image and unique name). Placements are pinned by the fb_ig_all preset (Facebook + Instagram, explicit positions, no Messenger / Audience Network / Threads). lint strict: headline <= 40 chars, no offer wording in headline / description, headline and message non-empty. The body is a first-person story that ends on the verified-link update. Region key: look it up with GET /search?type=adgeolocation&location_types=[\"region\"]&country_code=US&q=Oklahoma. bid_amount_minor 20000 = $200.00 cap; attribution is 7d click / 1d view (immutable after create).",
+  "campaign": {
+    "name": "US|OK|longread|purchase|cbo|2026-10-02",
+    "objective": "OUTCOME_SALES",
+    "special_ad_categories": [],
+    "daily_budget_minor": 6000,
+    "bid_strategy": "LOWEST_COST_WITH_BID_CAP",
+    "bid_policy": "require_cap"
+  },
+  "adsets": [
+    {
+      "name": "US|OK|21-65|img-1",
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "custom_event_type": "PURCHASE",
+      "billing_event": "IMPRESSIONS",
+      "bid_amount_minor": 20000,
+      "start_time": "2026-10-02T06:00:00-05:00",
+      "attribution": {"click_days": 7, "view_days": 1},
+      "placements": "fb_ig_all",
+      "targeting": {
+        "geo_locations": {"regions": [{"key": "REPLACE_ME_oklahoma_region_key"}]},
+        "age_min": 21,
+        "age_max": 65,
+        "advantage_audience": false
+      },
+      "ads": [
+        {
+          "name": "longread-img-01",
+          "creative": {
+            "kind": "link_image",
+            "image_hash": "REPLACE_ME_1",
+            "link": "https://example-lander.tld/?sub1={{ad.name}}",
+            "message": "Placeholder: first-person story goes here, several short paragraphs.\n\nUpdate: verified link below 👇",
+            "headline": "Read before you judge",
+            "cta": "SEE_DETAILS",
+            "display_link": "example.com"
+          }
+        }
+      ]
+    },
+    {
+      "name": "US|OK|21-65|img-2",
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "custom_event_type": "PURCHASE",
+      "billing_event": "IMPRESSIONS",
+      "bid_amount_minor": 20000,
+      "start_time": "2026-10-02T06:00:00-05:00",
+      "attribution": {"click_days": 7, "view_days": 1},
+      "placements": "fb_ig_all",
+      "targeting": {
+        "geo_locations": {"regions": [{"key": "REPLACE_ME_oklahoma_region_key"}]},
+        "age_min": 21,
+        "age_max": 65,
+        "advantage_audience": false
+      },
+      "ads": [
+        {
+          "name": "longread-img-02",
+          "creative": {
+            "kind": "link_image",
+            "image_hash": "REPLACE_ME_2",
+            "link": "https://example-lander.tld/?sub1={{ad.name}}",
+            "message": "Placeholder: first-person story goes here, several short paragraphs.\n\nUpdate: verified link below 👇",
+            "headline": "Read before you judge",
+            "cta": "SEE_DETAILS",
+            "display_link": "example.com"
+          }
+        }
+      ]
+    },
+    {
+      "name": "US|OK|21-65|img-3",
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "custom_event_type": "PURCHASE",
+      "billing_event": "IMPRESSIONS",
+      "bid_amount_minor": 20000,
+      "start_time": "2026-10-02T06:00:00-05:00",
+      "attribution": {"click_days": 7, "view_days": 1},
+      "placements": "fb_ig_all",
+      "targeting": {
+        "geo_locations": {"regions": [{"key": "REPLACE_ME_oklahoma_region_key"}]},
+        "age_min": 21,
+        "age_max": 65,
+        "advantage_audience": false
+      },
+      "ads": [
+        {
+          "name": "longread-img-03",
+          "creative": {
+            "kind": "link_image",
+            "image_hash": "REPLACE_ME_3",
+            "link": "https://example-lander.tld/?sub1={{ad.name}}",
+            "message": "Placeholder: first-person story goes here, several short paragraphs.\n\nUpdate: verified link below 👇",
+            "headline": "Read before you judge",
+            "cta": "SEE_DETAILS",
+            "display_link": "example.com"
+          }
+        }
+      ]
+    },
+    {
+      "name": "US|OK|21-65|img-4",
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "custom_event_type": "PURCHASE",
+      "billing_event": "IMPRESSIONS",
+      "bid_amount_minor": 20000,
+      "start_time": "2026-10-02T06:00:00-05:00",
+      "attribution": {"click_days": 7, "view_days": 1},
+      "placements": "fb_ig_all",
+      "targeting": {
+        "geo_locations": {"regions": [{"key": "REPLACE_ME_oklahoma_region_key"}]},
+        "age_min": 21,
+        "age_max": 65,
+        "advantage_audience": false
+      },
+      "ads": [
+        {
+          "name": "longread-img-04",
+          "creative": {
+            "kind": "link_image",
+            "image_hash": "REPLACE_ME_4",
+            "link": "https://example-lander.tld/?sub1={{ad.name}}",
+            "message": "Placeholder: first-person story goes here, several short paragraphs.\n\nUpdate: verified link below 👇",
+            "headline": "Read before you judge",
+            "cta": "SEE_DETAILS",
+            "display_link": "example.com"
+          }
+        }
+      ]
+    },
+    {
+      "name": "US|OK|21-65|img-5",
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "custom_event_type": "PURCHASE",
+      "billing_event": "IMPRESSIONS",
+      "bid_amount_minor": 20000,
+      "start_time": "2026-10-02T06:00:00-05:00",
+      "attribution": {"click_days": 7, "view_days": 1},
+      "placements": "fb_ig_all",
+      "targeting": {
+        "geo_locations": {"regions": [{"key": "REPLACE_ME_oklahoma_region_key"}]},
+        "age_min": 21,
+        "age_max": 65,
+        "advantage_audience": false
+      },
+      "ads": [
+        {
+          "name": "longread-img-05",
+          "creative": {
+            "kind": "link_image",
+            "image_hash": "REPLACE_ME_5",
+            "link": "https://example-lander.tld/?sub1={{ad.name}}",
+            "message": "Placeholder: first-person story goes here, several short paragraphs.\n\nUpdate: verified link below 👇",
+            "headline": "Read before you judge",
+            "cta": "SEE_DETAILS",
+            "display_link": "example.com"
+          }
+        }
+      ]
+    }
+  ]
+}

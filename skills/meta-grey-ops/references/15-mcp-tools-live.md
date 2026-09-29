@@ -1,8 +1,8 @@
 # 15 — Meta Ads MCP: live tool inventory (tools/list, 2026-09-02)
 
-Reviewed 2026-09-03.
+Reviewed 2026-09-03 (tool dump not re-taken since; pointer fixed 2026-09-29).
 
-Dumped from `https://mcp.facebook.com/ads` with a System User bearer token (`scripts/mcp.py tools`). 106 tools. Re-dump when Meta changes the server; the schema is not published. Decision facts live in `02` §5 — this file is the parameter lookup only.
+Dumped from `https://mcp.facebook.com/ads` with a System User bearer token (`scripts/mcp.py tools`). 106 tools. Re-dump when Meta changes the server; the schema is not published. Decision facts live in `02` §6 — this file is the parameter lookup only.
 
 | Tool | Parameters (required in **bold**) |
 |---|---|

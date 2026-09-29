@@ -1,6 +1,6 @@
 # Meta Marketing API, Billing, and Launch Operations
 
-Last reviewed: 2026-09-02 (§2, §6, §7 reduced to clean-lane rules; mechanics moved to `meta-grey-ops/02`). §10.0 verified 2026-08-31.
+Last reviewed: 2026-09-02 (§2, §6, §7 reduced to clean-lane rules; mechanics moved to `meta-grey-ops/02`). §10.0 verified 2026-08-31. PBIA subsection corrected 2026-09-29.
 
 Marketing API/MCP automation, System User tokens, Page/Instagram identity, payment readiness, restrictions, final activation. UI labels, Graph versions, permissions, app-mode rules, support availability change — verify live account/current docs before irreversible or spend-producing action.
 
@@ -81,18 +81,15 @@ An account appearing in `/instagram_accounts` doesn't prove it's valid as creati
 
 Migration deadline cut to 2025-09-09 — no supported version accepts legacy names now. A snippet/Postman example/SDK wrapper still passing `instagram_actor_id` is pre-v22 and will reject a valid ID — **rejection is not evidence the ID is bad.** Older docs pages still show the legacy name.
 
-### Page-backed Instagram accounts (PBIA) (doc-confirmed)
+### Page-backed Instagram accounts (PBIA) (corrected 2026-09-29)
 
 A Page with **no** Instagram account can still run Instagram placements: the Page's PBIA is an auto-derived IG identity (name+picture from the Page) — what the Ads Manager identity picker means by "Use Facebook Page".
 
-```
-GET  /{page_id}/page_backed_instagram_accounts   → existing PBIA (data: [] if none)
-POST /{page_id}/page_backed_instagram_accounts   → creates it; returns existing if present
-```
+**API create is deprecated.** `POST /{page_id}/page_backed_instagram_accounts` was deprecated in the v22.0 changelog and stopped working for all versions on 2025-04-21 (re-verified 2026-09-29; returns #10 Permission Denied in the field); the `GET` edge was removed from the Page schema (returns #100 "nonexisting field"). An earlier revision of this section presented both calls as doc-confirmed: wrong. Create the PBIA in the UI (Ads Manager → new ad draft → Identity → Instagram account → **Use Facebook Page** → discard the draft) and check existence with `GET /{page_id}?fields=instagram_business_account,connected_instagram_account,connected_page_backed_instagram_account` (`meta-grey-ops/18`).
 
-- **Requires a PAGE access token** (`GET /{page_id}?fields=access_token`), ≥ADVERTISER role. A user/System-User token returns `190 "must be called with a Page Access Token"` — wrong token type, NOT missing PBIA. Helper wrappers injecting a user token hit this silently; call the edge directly.
-- One PBIA per Page, created idempotently.
-- Pass the returned id as **`instagram_user_id`** in `object_story_spec`.
+- Page-level reads and writes need a **PAGE access token** (`GET /{page_id}?fields=access_token`), ≥ADVERTISER role. A user/System-User token returns `190 "must be called with a Page Access Token"` — wrong token type, NOT missing PBIA.
+- One PBIA per Page.
+- Pass the PBIA id as **`instagram_user_id`** in `object_story_spec`.
 - Ads-only identity: no organic posts/comments/likes, cannot log in. In-feed the profile name renders black/non-clickable, not a blue link — ad comment-reply workflows have no account to reply from. Irrelevant for pure direct-response; disqualifying if the plan needs organic IG presence or comment moderation.
 
 Destination-specific flows (e.g. Instagram Direct) can additionally require matching promoted object, destination, CTA, messaging eligibility.
@@ -105,7 +102,7 @@ Detail → `meta-grey-ops/02` §3.
 
 ## 7. Ads MCP governance
 
-Facts (tools, auth, Claude Code syntax, rules API, verified failures) → `meta-grey-ops/02` §0 and §5. Clean-lane governance:
+Facts (tools, auth, Claude Code syntax, rules API, verified failures) → `meta-grey-ops/02` §0 and §6. Clean-lane governance:
 
 1. Agent writes go through the Marketing API; MCP is for reads and bounded edits. No published MCP tool schema exposes attribution/enhancement/multi-advertiser controls; `ads_create_creative` is single-image only (doc-confirmed 2026-09-02).
 2. Distinguish Meta's connector (`mcp.facebook.com/ads`) from third-party MCP servers and direct API — different operators/credentials/trust boundaries. Never send a Marketing API token to a third-party MCP provider; shared-app + raw-token + unsupervised writes is the reported ban mechanism [practitioner-multiple, no Meta statement].
@@ -139,6 +136,8 @@ A default/verified replacement card does NOT automatically clear a restriction f
 5. Use the review/contact path shown for that asset; avoid duplicate requests.
 6. If support calls it final, preserve the case. Clean lane: do not bypass from this skill — replacement/cloaking/asset hopping is `meta-grey-ops`.
 
+Lane caveat: this section is the clean-lane (fix, then request review) path. **On the operator's own BM the rule is: on an ad disapproval do not edit or resubmit** — switch the ad off, leave it, report (`meta-grey-ops/23`).
+
 Treat support replies as official for the named account, not universal product documentation — automated/first-line replies can conflict with live UI. Preserve transcript/case ID; ask for manual escalation + exact affected asset/rule/date/duration/review path when ambiguous.
 
 Concise billing appeal template:
@@ -153,7 +152,7 @@ Never include token, app secret, full card number, CVV, verification code, or ID
 
 ## 10. Safe automation launch sequence
 
-Build for reversibility. Composing rule: **`validate_only` → PAUSED → human enable**, in that order, on every object.
+Build for reversibility. Composing rule: **`validate_only` → PAUSED → human enable**, in that order, on every object. Note: a PAUSED ad created via API is still submitted for review immediately (`meta-grey-ops/04`), so "zero-spend probe" does not mean "no review"; `meta-grey-ops` creates ACTIVE by default.
 
 Limit: an object referencing a parent that doesn't exist yet (ad set needs `campaign_id`; ad needs `adset_id`+`creative_id`) can't be validated ahead of the run — fails on the missing parent, not the payload. Campaigns and creatives have no such dependency, validate any time. Pre-flight covers campaign+creative; ad sets/ads validate in sequence during the real build, immediately before each create.
 

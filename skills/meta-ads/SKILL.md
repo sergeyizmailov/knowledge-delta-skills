@@ -105,7 +105,8 @@ effective status separately.
 
 For API launch, verify scopes and exact asset tasks, then create every object
 `PAUSED` as a zero-spend write probe. A successful `GET` does not prove write
-access.
+access. (A PAUSED ad created via API is still submitted for review at once; the grey-ops
+launcher creates ACTIVE by default, `meta-grey-ops/00`.)
 
 ## Diagnose in order
 
@@ -122,7 +123,7 @@ eligibility/billing -> delivery -> auction -> attention -> click quality
 - Creative: use reference 12; define hook/hold denominators before diagnosis.
 - Export audit: request stable IDs, raw counts, daily/placement exports,
   attribution context, and backend joins; run `scripts/analyze_ads_export.py`.
-- Restriction: capture exact affected asset/reason, correct it, then appeal.
+- Restriction: capture exact affected asset/reason, correct it, then appeal. (Operator lane, own BM: on an ad disapproval do not edit or resubmit; disabled account → `meta-grey-ops/23`.)
 - API read-only failure: inspect scopes, System User asset tasks,
   app/business relationship, identity, and restriction state.
 

@@ -2,7 +2,7 @@
 """Comment moderation on ad posts: list, hide, delete — with a Page token.
 
     python3 comments.py --account act_123 --page 456 --list
-    python3 comments.py --account act_123 --page 456 --hide-all
+    python3 comments.py --account act_123 --page 456 --hide-all      # skips the Page's own comments
     python3 comments.py --account act_123 --page 456 --hide-matching "scam|мошенн|развод|fake"
     python3 comments.py --ads 1111,2222 --page 456 --delete-matching "http"
 
@@ -84,7 +84,8 @@ def main() -> int:
     g.add_argument("--hide-all", action="store_true")
     g.add_argument("--hide-matching", help="regex (case-insensitive) on comment text")
     g.add_argument("--delete-matching", help="regex; deletion is irreversible")
-    ap.add_argument("--dry-run", action="store_true", help="show what would be hidden/deleted")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="show what would be hidden/deleted; `acted` counts the would-be actions")
     args = ap.parse_args()
 
     ptoken = graph.page_token(args.page)
@@ -121,12 +122,16 @@ def main() -> int:
                     "created_time": c.get("created_time"), "like_count": c.get("like_count"),
                 })
                 continue
+            # Never hide or delete the Page's own replies (the answers under the ad), in any mode.
+            if str((c.get("from") or {}).get("id")) == str(args.page):
+                continue
             hit = args.hide_all or (pattern and pattern.search(text or ""))
             if not hit or (c.get("is_hidden") and not args.delete_matching):
                 continue
             action = "DELETE" if args.delete_matching else "hide"
             print(f"    {action:<6} {who[:20]:<20} {text[:80]}")
             if args.dry_run:
+                acted += 1  # "would be acted on": the summary counts what a real run would do
                 continue
             try:
                 if args.delete_matching:

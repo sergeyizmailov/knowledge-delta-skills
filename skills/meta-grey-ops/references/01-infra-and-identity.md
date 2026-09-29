@@ -1,6 +1,6 @@
 # 01 — Infra & identity: antidetect, proxies, sessions
 
-Reviewed 2026-08-28. **Practitioner doctrine, not Meta documentation** — nothing here
+Reviewed 2026-08-28; proxy note added 2026-09-29. **Practitioner doctrine, not Meta documentation** — nothing here
 is [official]; validate against your own portfolio. Attribution method → `06`.
 
 Chain Meta reads as one "user": FB profile → antidetect profile → proxy (exit IP) →
@@ -12,7 +12,10 @@ security score → checkpoint / session kill / restriction / disable.
 Operational session hygiene, not a Meta auth requirement — API calls needn't share
 the browser's IP. A grey persona's trust rests on looking like one consistent human.
 Token type does not waive the assigned-egress rule; direct egress needs an explicit
-`META_ALLOW_NO_PROXY=1` decision for that BM (`02`).
+`META_ALLOW_NO_PROXY=1` decision for that BM (`02`); under `metaops` that decision lives in the
+workspace (`defaults.allow_no_proxy: true`), an exported env var is dropped. Field 2026-09-29: a scraped
+EAAB from a Mac with no proxy passed `metaops doctor` on an own BM — it works, it does not show the
+direct IP is safe (`02` §5).
 
 - Persona's entire life from ONE exit IP: browser, API, token gen. Route scripts
   through the same proxy from a secrets file — don't trust a human to VPN.

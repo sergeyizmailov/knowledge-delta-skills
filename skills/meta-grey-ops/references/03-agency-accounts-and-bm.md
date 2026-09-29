@@ -1,6 +1,6 @@
 # 03 — Agency accounts, BMs, asset sharing
 
-Reviewed 2026-09-09.
+Reviewed 2026-09-09; naming section updated 2026-09-29.
 
 **New BM = 1 ad account cap** (UI, field-observed 2026-08-30): more only after
 "several weeks of following policies." Second account today = create BM2, create
@@ -241,13 +241,19 @@ source hit mid-flight.
 ## Naming (decide before first launch, never change mid-flight)
 
 Tracker splits by campaign name ONLY because the campaign URL maps the FB
-campaign-name macro into a tracker param (`ad_campaign_id`) — not automatic
-(`tracker-ops` mapping contract, 03); ad-level splits likewise need ad macros
-mapped. Given that mapping: campaign name = the ad account (e.g. J41-16), one
-campaign/account/test wave; ad set = structure+creative (`S1-creoName`); ad =
-creative name. Gives exact per-account tracker CPL, readable Ads Manager,
-unambiguous kills. Rename legacy campaigns before scaling — renames are safe,
-don't reset learning.
+campaign-name macro into a tracker param — not automatic (`tracker-ops` mapping
+contract, 03); ad-level splits likewise need ad macros mapped. Two conventions:
+- **Agency/generic**: campaign name = the ad account (e.g. J41-16), one
+  campaign/account/test wave; ad set = structure+creative (`S1-creoName`); ad =
+  creative name.
+- **Our team (Keitaro id contract, 2026-09)**: campaign name starts with the Keitaro campaign id +
+  geo (`1234 US PWA <ST> Longread<n> <buyer>`), ad = creative name `EN<seq>-<buyer>-<ver>`; the
+  ACCOUNT travels in the link (`act=` → sub10), not in the campaign name. **Own BM: no casino name
+  in campaign / ad set / ad names.** Names repeat (four ads once shared EN0038; a campaign name can
+  recur on two accounts) and name macros are first-publish snapshots (`04`), so the tracker key is
+  the id: `ad_campaign_id` = FB campaign id, `sub_id_6` = FB ad_id (`tracker-ops/01`).
+Rename legacy campaigns before scaling — renames are safe, don't reset learning (`metaops edit
+rename`: ACTIVE → IN_PROCESS → ACTIVE in ~15 s, 2026-09-29).
 
 ## Supply quality: what to demand, and what a burned batch looks like
 
@@ -281,7 +287,9 @@ defines its denominator) but directionally consistent:
   the flag cascades to every account it ever touched, with a card previously used on a banned
   account called near-100% block risk (two independent sources). Nobody tested either. Size the
   reserve on 1-5 unless the operator's own data says otherwise, since that is the assumption
-  that fails safe.
+  that fails safe. Do not move a card from a disabled account onto its replacement (2026-09-29:
+  CF1 went live on the same card, Page and pixel as tr-1, disabled 2 h earlier; outcome not yet
+  known, so this is a risk, not a finding): `26`.
   Separately, single-source but mechanistically plausible: adding or removing cards more than
   ~3 times in a short window can lock an account on stolen-card suspicion — churning cards is
   itself a signal, independent of reuse.

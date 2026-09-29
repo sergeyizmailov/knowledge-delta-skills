@@ -6,6 +6,12 @@ minor units, targeting gets replaced wholesale, and enum defaults fill silently.
 are ACTIVE by default (launch.py) — run this right after apply, since spend has already
 started; under a spec's create_status: PAUSED override, run it before activate instead.
 Exit 1 on any mismatch or any non-deliverable effective status.
+
+Beyond field diffs it fails on: placements that are not pinned to explicit positions or that
+include Audience Network / Messenger / Threads the spec did not list (checked even when the
+spec omitted the keys); an uncapped ad set under `bid_policy: require_cap`; a creative without
+an Instagram identity; a display link / description / conversion_domain that differs from the
+spec; and any Advantage+ creative feature that reads back OPT_IN without the spec allowing it.
 """
 
 from __future__ import annotations
@@ -34,7 +40,7 @@ ADSET_FIELDS = (
 AD_FIELDS = (
     "id,name,status,effective_status,issues_info,conversion_domain,"
     "creative{id,object_story_spec,asset_feed_spec,template_url_spec,url_tags,product_set_id,"
-    "degrees_of_freedom_spec,contextual_multi_ads}"
+    "degrees_of_freedom_spec,contextual_multi_ads,creative_sourcing_spec}"
 )
 
 # effective_status values that mean "activating will not fix this".
@@ -84,7 +90,19 @@ def _equivalent(expected, actual) -> bool:
                 return False
             remaining.remove(match)
         return True
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return _as_bool(expected) == _as_bool(actual)
     return str(expected) == str(actual)
+
+
+def _as_bool(value):
+    """Graph returns flags as true/false, 1/0 or "1"/"0"; None stays None."""
+    if isinstance(value, str):
+        low = value.strip().lower()
+        return {"1": True, "true": True, "0": False, "false": False}.get(low, value)
+    if isinstance(value, (int, bool)) and value in (0, 1):
+        return bool(value)
+    return value
 
 
 class Diff:
@@ -251,6 +269,103 @@ def check_dlo_feed(d: Diff, wc: dict, feed: dict) -> None:
         d.check(f"        dlo[{label}] title", loc.get("title"), _text_for_label(feed.get("titles"), label))
 
 
+def check_placements(d: Diff, expected_t: dict | None, actual_t: dict, strict: bool = False) -> None:
+    """Placements on the read-back ad set. Runs on every ad set, spec or not, and whether or
+    not the spec listed the keys: an omitted publisher_platforms means Meta serves ALL
+    placements, Audience Network / Messenger / Threads included, and that is exactly what
+    must never pass silently.
+
+      · publisher_platforms must be present on the read-back
+      · audience_network / messenger / threads only when the spec listed them
+      · every targeted platform carries a non-empty <platform>_positions list
+
+    `expected_t` is the assembled targeting from launch.build_targeting (presets expanded), or
+    None without --spec."""
+    got = actual_t.get("publisher_platforms")
+    pinned = bool((expected_t or {}).get("publisher_platforms"))
+    if not got:
+        msg = ("targeting.publisher_platforms missing on read-back: the ad set runs on "
+               "ALL placements (Audience Network, Messenger, Threads included)")
+        if pinned or strict or expected_t is None:
+            print(f"    MISMATCH  {msg}")
+            d.bad += 1
+        else:  # the spec never pinned placements; plan already warned about it
+            print(f"    WARN      {msg} - the spec did not pin placements (use `placements` or lint: strict)")
+        return
+    want = set((expected_t or {}).get("publisher_platforms") or [])
+    extra = sorted(p for p in launch.UNWANTED_PLATFORMS if p in got and p not in want)
+    if extra:
+        print(f"    MISMATCH  targeting.publisher_platforms carries {extra} which the spec did not list")
+        d.bad += 1
+    targeted = [p for p in got if (p in want or not want) and p not in extra]
+    for platform in targeted:
+        key = launch.POSITION_KEYS.get(platform, f"{platform}_positions")
+        if (expected_t or {}).get(key) and not actual_t.get(key):
+            print(f"    MISMATCH  {platform} is targeted with explicit {key} in the spec but they are "
+                  "missing or empty on read-back")
+            d.bad += 1
+    if not extra:
+        print(f"    ..    placements {sorted(got)} checked")
+
+
+def check_bid_policy(d: Diff, spec: dict, s: dict, camp: dict, a: dict) -> None:
+    """bid_policy: require_cap. An uncapped ad set must not pass, whatever the diff above said."""
+    if launch.bid_policy(spec, s) != "require_cap":
+        return
+    cbo = spec["budget_mode"] == "CBO"
+    strategy = camp.get("bid_strategy") if cbo else a.get("bid_strategy")
+    if strategy not in launch.CAP_STRATEGIES or not a.get("bid_amount"):
+        print(f"    MISMATCH  bid_policy=require_cap but the ad set is uncapped on read-back "
+              f"(bid_strategy={strategy}, bid_amount={a.get('bid_amount')})")
+        d.bad += 1
+    else:
+        print(f"    ..    bid cap enforced: {strategy} bid_amount {a.get('bid_amount')}")
+
+
+def check_copy_fields(d: Diff, wc: dict, node: dict, strict: bool) -> None:
+    """Display link (link_data.caption) and description, only where the spec set them.
+
+    link_video has no display link (video_data has no caption; launch.py refuses or warns), so
+    only its description (link_description) is diffed."""
+    kind = wc.get("kind", "link_image")
+    if kind in ("link_image", "link_carousel") and wc.get("display_link"):
+        got = node.get("caption")
+        d.check("        display_link (caption)", wc["display_link"], got)
+        if strict and not got:
+            print("        MISSING  link_data.caption: the ad shows the raw destination domain "
+                  "instead of the display link")
+    if wc.get("description") is not None:
+        if kind == "link_image":
+            d.check("        description", wc["description"], node.get("description"))
+        elif kind == "link_video":
+            d.check("        description", wc["description"], node.get("link_description"))
+
+
+def leaked_opt_in(feats: dict, want_c: dict | None) -> list[str]:
+    """creative_features_spec keys that read back OPT_IN without the spec allowing it.
+
+    Allowed = features the spec deliberately keeps ON: `creative.opt_in_features`, names left
+    out of a custom `opt_out_features` list, and media_type_automation for catalog product
+    video. Anything else at OPT_IN is a leak, including keys launch.py never heard of."""
+    creative = want_c or {}
+    expected_out = set(launch.resolved_opt_out(creative))
+    allowed = (set(launch.DEFAULT_OPT_OUT) - expected_out) | set(creative.get("opt_in_features") or [])
+    opted_in = sorted(k for k, v in (feats or {}).items() if (v or {}).get("enroll_status") == "OPT_IN")
+    return [k for k in opted_in if k not in allowed]
+
+
+def leaked_sourcing_opt_in(css: dict | None, want_c: dict | None) -> list[str]:
+    """creative_sourcing_spec entries (featured_offering_spec = "Show spotlights" / website
+    highlights, brand, catalog, site links ...) that read back OPT_IN. Ads Manager enrols
+    featured_offering_spec by default (field-checked 2026-09-29 on all five CF1 ads) and it pulls
+    text from the landing site into the ad; API-built creatives read back OPT_OUT. Allowed only
+    when the spec lists the entry in `creative.opt_in_features`."""
+    allowed = set((want_c or {}).get("opt_in_features") or [])
+    return sorted(k for k, v in (css or {}).items()
+                  if isinstance(v, dict) and v.get("enroll_status") == "OPT_IN"
+                  and k not in allowed and k.replace("_spec", "") not in allowed)
+
+
 def completeness(d: Diff, state: dict, spec: dict | None) -> None:
     """Refuse to bless a tree that did not finish building.
 
@@ -363,6 +478,9 @@ def main() -> int:
                 if key == "geo_locations":
                     want = normalize_location_types(want)
                 d.check(f"targeting.{key}", want, actual_t.get(key))
+        # Placements are checked on the read-back itself, even when the spec omitted the keys.
+        check_placements(d, expected_t if spec else None, a.get("targeting") or {},
+                         strict=bool(spec and spec.get("lint") == "strict"))
         if spec and spec["budget_mode"] == "ABO":
             d.check("daily_budget (minor)", s["daily_budget_minor"], a.get("daily_budget"))
             d.check("bid_strategy", s.get("bid_strategy", "LOWEST_COST_WITHOUT_CAP"), a.get("bid_strategy"))
@@ -377,6 +495,8 @@ def main() -> int:
             # the campaign — read it back the same way ABO's bid_amount is diffed above.
             if s.get("bid_amount_minor"):
                 d.check("bid_amount (minor)", s["bid_amount_minor"], a.get("bid_amount"))
+        if spec:
+            check_bid_policy(d, spec, s, camp, a)
         # Reading this back is not cosmetic: an unknown key inside attribution_spec is
         # ignored by Graph, so a wrong field name looks like a success and leaves the
         # account default in place. launch.py always sends one unless the spec opted into
@@ -408,8 +528,9 @@ def main() -> int:
                         d.bad += 1
         if spec:
             # Ad sets and ads are always created by this run (only the campaign can be
-            # reused), so their configured status must equal create_status. launch.py never
-            # flips them after create — only a reused-free campaign is flipped PAUSED→ACTIVE.
+            # reused), so their configured status must equal create_status. Under a reused
+            # campaign launch.py creates ad sets PAUSED and flips each ACTIVE after its ads
+            # exist, so an ad set still PAUSED here is a flip that never landed.
             d.check("status", spec.get("create_status", "ACTIVE"), a.get("status"))
         d.status("effective_status", a.get("effective_status"))
         if a.get("issues_info"):
@@ -445,6 +566,7 @@ def main() -> int:
                         d.check("        image_hash", wc["image_hash"], node.get("image_hash"))
                     if wc.get("video_id"):
                         d.check("        video_id", wc["video_id"], node.get("video_id"))
+                    check_copy_fields(d, wc, node, spec.get("lint") == "strict")
                 elif wc.get("kind") == "link_carousel":
                     got_cards = node.get("child_attachments") or []
                     want_cards = [{k: v for k, v in {
@@ -456,6 +578,7 @@ def main() -> int:
                     d.check("        cards (count)", len(want_cards), len(got_cards))
                     d.check("        cards", want_cards, got_cards)
                     d.check("        message", wc.get("message", ""), node.get("message"))
+                    check_copy_fields(d, wc, node, spec.get("lint") == "strict")
                 elif wc.get("kind") == "dlo":
                     feed = creative.get("asset_feed_spec") or {}
                     d.check("        dlo bodies (count)", len(wc.get("locales") or []), len(feed.get("bodies") or []))
@@ -481,8 +604,15 @@ def main() -> int:
                                 td.get("description"))
                     d.check("        cta", wc.get("cta", "LEARN_MORE"), (td.get("call_to_action") or {}).get("type"))
                 d.check("        name", spec["adsets"][i]["ads"][j].get("name"), ad.get("name"))
+                want_domain = spec["adsets"][i]["ads"][j].get("conversion_domain", spec.get("conversion_domain"))
+                if want_domain:
+                    d.check("        conversion_domain", want_domain, ad.get("conversion_domain"))
             if not story.get("instagram_user_id"):
-                print("        WARN  no instagram_user_id — any IG placement will fail 1772103")
+                # Instagram placements are mandatory, and an ad without an IG identity cannot
+                # serve them (1772103). A silent WARN let such a tree through as "verified".
+                print("        MISMATCH  no instagram_user_id on the creative: Instagram placements "
+                      "cannot serve (1772103)")
+                d.bad += 1
             # Printing it was not verification. The destination is the one field where a
             # wrong value spends real money into the wrong funnel, so diff it.
             want_c = (spec["adsets"][i]["ads"][j].get("creative") or {}) if spec else None
@@ -505,17 +635,21 @@ def main() -> int:
                 d.bad += 1
             else:
                 print(f"        ..    contextual_multi_ads {cma}")
-            # Advantage+ enhancements: any key left OPT_IN that the spec opted out is a leak.
+            # Advantage+ enhancements: any key that reads back OPT_IN without the spec allowing it
+            # (creative.opt_in_features, or left out of a custom opt_out_features) is a leak.
             feats = ((creative.get("degrees_of_freedom_spec") or {}).get("creative_features_spec") or {})
+            leak = leaked_opt_in(feats, want_c)
             opted_in = sorted(k for k, v in feats.items() if (v or {}).get("enroll_status") == "OPT_IN")
-            wanted_out = set(launch.DEFAULT_OPT_OUT if not want_c or want_c.get("opt_out_features") is None
-                             else want_c.get("opt_out_features") or [])
-            leak = [k for k in opted_in if k in wanted_out]
             if leak:
                 print(f"        MISMATCH  Advantage+ features still OPT_IN: {leak}")
                 d.bad += 1
             else:
                 print(f"        ..    enhancements OPT_IN: {opted_in or 'none'}")
+            sourcing = leaked_sourcing_opt_in(creative.get("creative_sourcing_spec"), want_c)
+            if sourcing:
+                print(f"        MISMATCH  creative_sourcing_spec still OPT_IN: {sourcing} (Ads Manager default, e.g. "
+                      "'Show spotlights' pulls text from the site); switch it off in the ad's Enhancements")
+                d.bad += 1
             if spec:
                 d.check("        status", spec.get("create_status", "ACTIVE"), ad.get("status"))
             d.status("        effective_status", ad.get("effective_status"))

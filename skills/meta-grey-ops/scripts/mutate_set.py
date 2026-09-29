@@ -63,12 +63,25 @@ def show(set_id: str) -> dict:
 
 
 def main() -> int:
+    """Product sets are catalog objects: the catalog token (META_TOKEN_CATALOG, else META_TOKEN)."""
+    with graph.using_capability("catalog"):
+        return _main()
+
+
+def _main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--set-id", required=True)
     ap.add_argument("--show", action="store_true", help="Read the set and exit")
-    ap.add_argument("--retailer-ids", help="Comma-separated retailer_id values to select")
-    ap.add_argument("--filter", help="Path to a JSON file holding the filter object")
+    ap.add_argument("--retailer-ids", help="Comma-separated retailer_id values to select "
+                                           "(mutually exclusive with --filter)")
+    ap.add_argument("--filter", help="Path to a JSON file holding the filter object "
+                                     "(mutually exclusive with --retailer-ids)")
     args = ap.parse_args()
+
+    # Both given used to crash with a NameError AFTER the set was already mutated (the members
+    # check reads `ids`, which only exists on the --retailer-ids path). Refuse up front.
+    if args.filter and args.retailer_ids:
+        ap.error("--filter and --retailer-ids are mutually exclusive: pass one filter source")
 
     before = show(args.set_id)
     if args.show:

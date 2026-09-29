@@ -17,11 +17,21 @@ Rules (operator 2026-09-26, field lessons 26.09):
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from typing import Any
 
 import graph
+
+
+def _catalog_token(fn):
+    """The wrapped function reads catalog objects: use the catalog token (tokens.py)."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with graph.using_capability("catalog"):
+            return fn(*args, **kwargs)
+    return wrapper
 
 # Ad under review: the reviewer would see whatever the set holds right now.
 REVIEW = {"PENDING_REVIEW", "IN_PROCESS"}
@@ -131,6 +141,7 @@ def text_blockers(row: dict[str, Any], allow_message: bool = False) -> list[str]
     return out
 
 
+@_catalog_token
 def target_items(catalog_id: str, rids: list[str]) -> tuple[list[dict[str, Any]], list[str]]:
     """The swapped-in items are what renders: each must exist, be published and carry a real
     title, description and image."""
@@ -167,6 +178,7 @@ TARGET_WORDS = re.compile(
     r"1win|1xbet|mostbet|pinco|pin-up|boostwin|zazino|mplay|мплей", re.I)
 
 
+@_catalog_token
 def white_item_problems(set_id: str) -> list[str]:
     """The set's CURRENT items are what review sees. Each must have its own name + description
     (an empty one leaves Meta to fill the card from the link page) and no gambling words."""
@@ -188,6 +200,7 @@ def white_item_problems(set_id: str) -> list[str]:
     return out
 
 
+@_catalog_token
 def set_state(set_id: str) -> dict[str, Any]:
     """Filter + current members of one set."""
     info = graph.get(set_id, params={"fields": "id,name,filter,product_count"}, context="swap set")

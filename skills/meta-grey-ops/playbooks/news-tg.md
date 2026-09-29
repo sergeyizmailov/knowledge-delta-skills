@@ -1,6 +1,6 @@
 # Playbook — News funnels: FB ads → news pre-lander → Telegram subscription
 
-Reviewed 2026-08-28. Filled from live work (Aug 2026); benchmarks are one team's — re-verify per team. Vertical: "news-style" crypto/finance persona funnels to a TG channel.
+Reviewed 2026-08-28 (display-link line corrected 2026-09-29). Filled from live work (Aug 2026); benchmarks are one team's — re-verify per team. Vertical: "news-style" crypto/finance persona funnels to a TG channel.
 
 **Funnel:** FB/IG ad (news-style image, no ad-level texts) → Keitaro campaign URL (cloaca: bots/reviewers → white page, real users → black news pre-lander) → pre-lander (fake news article/persona story) → CTA to Telegram channel. Lead = TG subscription via postback. Deeper funnel (regs, deposits, revenue) happens behind the channel, judged by TL — cheap low-quality subs are a trap.
 
@@ -8,7 +8,7 @@ Reviewed 2026-08-28. Filled from live work (Aug 2026); benchmarks are one team's
 
 **Geo/targeting:** USA 20+, Advantage+ broad, auto placements; kill placements with suspiciously cheap CPM and zero leads.
 
-**Creative constraints:** news-photo style with baked-in headline text; no ad-level primary text/headline (moderation rule); display link = big news domain (real destination stays the tracker link); CTA Learn more; all enhancements off except Hide price; multi-advertiser off. Uniquify per account before upload (byte-level only, below Meta's near-duplicate threshold — not real variance, `13`). Leads/Submit Application starts at 06:00–08:00 account geo-time, never 00:00.
+**Creative constraints:** news-photo style with baked-in headline text; no ad-level primary text/headline (moderation rule); display link empty or the root domain of the real destination (an earlier team recipe used a big news domain unrelated to the destination: dropped 2026-09-29, Meta requires the display URL to match the website URL domain and masking risks a 60-day domain block, `07`); CTA Learn more; all enhancements off except Hide price; multi-advertiser off. Uniquify per account before upload (byte-level only, below Meta's near-duplicate threshold — not real variance, `13`). Leads/Submit Application starts at 06:00–08:00 account geo-time, never 00:00.
 
 **Review traps / what kills the account:**
 - A "news-style" persona alone does NOT trigger Special Ad Category — trigger is CONTENT: advocating/debating a topic of public importance (economy, health, crypto regulation) can fall under Social Issues/Elections/Politics. Keep creative on the product/offer, not the debated issue.

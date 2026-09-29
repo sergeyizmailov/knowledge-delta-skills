@@ -26,10 +26,11 @@ sheetfeed = "sheetfeed:main"
 [tool.setuptools]
 package-dir = {"" = "scripts"}
 py-modules = [
-  "activate", "asset_graph", "bulk", "clone", "cmd_business", "cmd_catalog", "cmd_edit", "cmd_operate", "swapgate",
-  "comments", "edit", "edit_tags", "edit_targeting", "feed_upload", "graph",
+  "activate", "asset_graph", "bulk", "clone", "cmd_business", "cmd_catalog", "cmd_edit", "cmd_inspect", "cmd_operate", "swapgate",
+  "cmd_keitaro", "comments", "edit", "edit_tags", "edit_targeting", "feed_upload", "graph",
   "insights", "launch", "mcp", "media", "meta_workspace", "metaops", "monitor",
-  "mutate_set", "page", "probe", "rules", "sheetfeed", "uniquify", "verify"
+  "mutate_set", "page", "probe", "rules", "sheetfeed", "uniquify", "verify",
+  "cmd_token", "tokens"
 ]
 
 [tool.ruff]

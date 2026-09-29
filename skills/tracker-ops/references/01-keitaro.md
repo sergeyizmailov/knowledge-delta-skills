@@ -56,11 +56,39 @@ currency per entry; production-verified). Top-level `timezone`+`currency` also
 works (FIELD 2026-09-27: `{"success":true}` with `only_campaign_uniques:false`,
 filter `sub_id_1:"<FB campaign name>"` — use whichever param your URL maps).
 `{campaign_ids:[ID], only_campaign_uniques:false,
-costs:[{start_date,end_date,timezone,currency,cost, filters:{ad_campaign_id:"J41-16"}}]}`
-- Idempotent (re-push overwrites matched clicks). Push per completed account-tz
-  day.
+costs:[{start_date,end_date,timezone,currency,cost, filters:{ad_campaign_id:"<FB campaign id>"}}]}`
+- Idempotent (re-push overwrites matched clicks). Push per account-tz day and re-push the trailing days
+  (the current day is partial). Date format of `start_date`/`end_date`: copy a working call; `report/build` uses
+  `YYYY-MM-DD HH:MM` (unverified for this endpoint; `metaops keitaro push` sends that shape). Timezone is an IANA name, so DST days are the
+  tracker's problem, but the day boundary must be the AD ACCOUNT's, one entry per account.
 - Filter keys: keyword, external_id, creative_id, ad_campaign_id, source,
   sub_id_1..30 (comma-lists ok).
+- **Key on ids, not names.** FB names repeat (four ads once shared one name; a campaign name can recur on
+  two accounts, and a re-push then overwrites the other account's cost), and `{{…name}}` url_tag macros
+  are first-publish snapshots (`meta-grey-ops/04`), so a renamed object no longer matches. In the operator's
+  Keitaro 1234 link the FB campaign id lands in `ad_campaign_id` and the FB ad id in `sub_id_6` (check
+  the mapping of your own campaign): push per ad,
+  `filters:{sub_id_6:"<ad_id>"}` (finest key; campaign cost = sum), or per campaign,
+  `filters:{ad_campaign_id:"<campaign_id>"}`. Do not push both levels for the same days: the later
+  push overwrites the same clicks. Name-keyed (`sub_id_1:"<campaign name>"`) worked on 2026-09-27 but is
+  the fragile option.
+- Script: `metaops keitaro push` (`meta-grey-ops/16` § Keitaro). Dry run without `--confirm PUSH`. It pulls ad-level
+  daily insights over every effective status (deleted/archived too; account tz, account currency), sends one
+  entry per (ad, day) with `filters:{sub_id_6}`, one request per day (<= 100 entries), re-pushes the trailing
+  3 days (today included, partial), then reads cost back (`/report/build` by day + `sub_id_6`) and prints FB
+  spend vs Keitaro cost per day. Flags: `no_clicks` (ad-day with spend and zero Keitaro clicks: the cost is
+  dropped), `not_stored` (Keitaro cost 0), `delta` (> 3%). Not settled after the bounded poll (45 s) = warning,
+  not failure; re-read with the dry run, don't re-push. `metaops keitaro report` = per-ad FB spend x Keitaro
+  clicks/regs/deps/`sale_revenue` (regs = leads + sales, never `conversions`; `{{…}}` macro rows excluded).
+- Spend that the ad rows do not explain (account total minus sum of ad rows; ads Graph did not return) is reported
+  as `unattributed`, NOT pushed: a campaign-level entry matches the same clicks as the per-ad entries and would
+  overwrite them. Only a campaign with no ad row at all that day is safe on `ad_campaign_id`; the script lists it
+  as a candidate and leaves the decision to a human.
+- Verified live 2026-09-29 (dry run + report on campaign 1234): `report/build` accepts the `EQUALS` campaign filter, `limit`/`offset`, dimensions `day`, `sub_id_6`, `sub_id_11`, measures `clicks`/`leads`/`sales`; `GET /campaigns/{id}` exposes the cost model fields the script warns on (CPA 60, auto ON on 1234). `sub_id_11` values seen for FB feed traffic: `Facebook_Mobile_Feed` (159 clicks, 7 deposits in 7 days); test/bot clicks carry an unsubstituted `{{placement}}` or `{sn_placement}`; other placements (stories, reels) have not landed yet.
+- Still unverified: the `start_date`/`end_date` format for `update_costs` itself (script sends `YYYY-MM-DD 00:00` / `23:59`; the last minute of the day may fall outside; no real push yet), whether Graph returns deleted/archived ads' rows on the account edge with the `ad.effective_status` filter (`unattributed` exposes a miss), whether `update_costs` skips bot-marked clicks (docs say the UI does), and how long the readback lags. First live use: one
+  completed day, dry run, `--confirm PUSH`, compare in the UI.
+- Keitaro converts at its own rate: with an account currency different from Keitaro's base (set `KEITARO_CURRENCY`
+  or `--keitaro-currency`), the script judges days by the consistency of the implied rate, not by delta vs 1.0.
 - `currency` = the ad account's currency as-is (EUR, etc.); Keitaro converts to
   its base currency at its own rate (FIELD 2026-09-27: €102.71 → $116.99).
   No manual FX. `timezone` = the ad account tz; the UI "Обновить расходы" form
@@ -75,7 +103,8 @@ costs:[{start_date,end_date,timezone,currency,cost, filters:{ad_campaign_id:"J41
   2026-09-27: $60/conv). Either
   re-push at end of day after late conversions, or set the campaign cost model
   to CPC 0 (`PUT /campaigns/{id}` `cost_type`/`cost_value`/`cost_auto`) with the
-  campaign owner's OK so only pushed cost counts.
+  campaign owner's OK so only pushed cost counts. `metaops keitaro push|report` read the model
+  (`GET /campaigns/{id}`, never PUT) and warn when it is CPA/CPS with auto ON.
 - `/campaigns/{id}/update_costs` exists but docs say "VERY SLOW" — use the
   clicks endpoint.
 - `/integrations/facebook` (native auto cost sync) may be blocked for
@@ -147,8 +176,11 @@ end-to-end — don't assume the postback works because the URL looks correct.
 ## Gotchas
 
 - Bot clicks inflate `clicks` (not `campaign_unique_clicks`); cost spreads over
-  all matching clicks → CPC looks diluted on bot days, but daily CPL vs your
-  payout-status count stays correct.
+  matching clicks → CPC looks diluted on bot days, but daily CPL vs your
+  payout-status count stays correct. Conflict to test on one day: the Keitaro docs (manual cost update
+  page) say bot-marked clicks are skipped by default when updating costs; whether the API endpoint
+  does the same is unverified. The same page calls the update "a heavy operation, 10-20 minutes", vs
+  seconds-to-minutes read-back seen here: poll, don't re-push.
 - Geo on mobile IPv6 resolves to carrier hubs, not the user's city
   (FIELD 2026-09-27: Louisiana-only targeting, deps showed Texas cities) — not
   a targeting/cloak leak; don't geo-kill on tracker city/region.

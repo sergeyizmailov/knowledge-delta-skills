@@ -36,6 +36,7 @@ catalog edit as review-safe — it reserves re-review "at any time".
 - [ ] White creatives AND target creatives ready, stored apart
 - [ ] PWA/link built; domain, redirects, macros walked to the offer once — `11`
 - [ ] PWA brand = casino named in texts/creatives; no state/lottery/government branding — `playbooks/casino.md`
+- [ ] Copy + names (own BM): headline neutral ≤40 chars, CTA `SEE_DETAILS`, display link empty/root domain, no casino name in campaign / ad set / ad names, `lint: "strict"`, `placements` set — `SKILL.md`
 - [ ] Account pacing: no campaign create on this account in the last ~3h, no throttle cooldown open (`metaops pace`); weak/new account → smaller tree or first launch in UI — `16` § Pacing
 - [ ] Tracking live end to end; CAPI + Pixel share one `event_id` — `tracker-ops/01`
 
@@ -61,7 +62,7 @@ catalog edit as review-safe — it reserves re-review "at any time".
 
 ## 4 After approval — the step that gets forgotten
 
-**Review timing, measured (act_<id>, TR, catalog ads, 2026-09-22):** three ads created
+**Review timing, measured (act_<ACCOUNT_ID>, TR, catalog ads, 2026-09-22):** three ads created
 and activated at 18:48 Istanbul were `ACTIVE` by 18:51-18:52 — **~3 minutes**, `ad_review_feedback`
 empty. Same account, an ad set targeting edit put a live ad back through review and it came back
 `DISAPPROVED` (`Spam`) within one minute. So the wait is minutes, not hours: poll
@@ -91,7 +92,7 @@ spend is the cheapest moment to swap. A stuck ad is a monitoring question, not a
 - [ ] The ad set cannot be repointed — `promoted_object` immutable, `04`.
 - [ ] Read back: `product_count`, filter actually changed, live card correct
 - [ ] `effective_status` re-checked — no ad went back into review
-- [ ] Rejected ad → switched off; same creative/angle/PWA never re-uploaded into this account (FIELD 2026-09-27)
+- [ ] Rejected ad → switched off, not edited, not resubmitted (operator rule); same creative/angle/PWA never re-uploaded into this account (FIELD 2026-09-27). Several "Spam" rejects within minutes of approval → `23`
 - [ ] Cloaker ON; filter matches ad-set targeting on device/OS AND GEO — `senior-buyer-ops/03`
 
 ## 5 Adding an ad set / ad later

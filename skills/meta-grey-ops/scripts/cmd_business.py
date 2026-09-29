@@ -60,6 +60,16 @@ ASSET_ID_KEYS = {
 DUMMY_TEST_EMAIL = "metaops-capi-test@example.invalid"
 
 
+
+def _business_reads(fn: Any) -> Any:
+    """Business-graph reads use the business token (META_TOKEN_BUSINESS, else META_TOKEN when its
+    class carries business_read); tokens.py / graph.resolve_token."""
+    @functools.wraps(fn)
+    def wrapper(ctx: Any, args: argparse.Namespace) -> Any:
+        with ctx.graph.using_capability("business_read"):
+            return fn(ctx, args)
+    return wrapper
+
 def _require_workspace(ctx: Any, args: argparse.Namespace, label: str) -> None:
     if not getattr(args, "workspace_obj", None):
         raise ctx.MetaOpsError(f"{label} requires --workspace")
@@ -132,6 +142,7 @@ BUSINESS_ASSET_EDGES = {
 }
 
 
+@_business_reads
 def _business_assets(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     _require_workspace(ctx, args, "business assets")
     profile_name, profile = args.workspace_obj.profile(args.profile)
@@ -315,6 +326,7 @@ def _pixel_share(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any
 
 # Edge verified 2026-09-03 (SDK 26.0.1): AdsPixel.get_shared_accounts endpoint
 # '/shared_accounts'.
+@_business_reads
 def _pixel_shared(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     _require_workspace(ctx, args, "business pixel shared")
     profile_name, profile = args.workspace_obj.profile(args.profile)
@@ -356,7 +368,8 @@ def _capi_test(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any]]
         },
     }
     payload = {"data": [event], "test_event_code": args.test_code}
-    resp = ctx.graph.post(f"{dataset_id}/events", payload, context="capi test event")
+    with ctx.graph.using_capability("events_write"):  # META_TOKEN_EVENTS, else META_TOKEN if its class carries it
+        resp = ctx.graph.post(f"{dataset_id}/events", payload, context="capi test event", idempotent=True)
     return 0, ctx.result_envelope(
         "business capi test", True, "sent",
         data={
@@ -407,7 +420,7 @@ def _user_assign(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, Any
     tasks = _tasks_list(ctx, args.tasks, args.asset)
     ctx.require_provisioning_admin(args.workspace_obj, profile_name)
     payload = {"user": args.user_id, "tasks": tasks}
-    ctx.graph.post(f"{asset_id}/assigned_users", payload, context="assign business user")
+    ctx.graph.post(f"{asset_id}/assigned_users", payload, context="assign business user", idempotent=True)
     return 0, ctx.result_envelope(
         "business user assign", True, "assigned",
         data={"profile": profile_name, "asset": args.asset, "asset_id": asset_id,
@@ -433,7 +446,7 @@ def _partner_share(ctx: Any, args: argparse.Namespace) -> tuple[int, dict[str, A
     tasks = _tasks_list(ctx, args.tasks, args.asset)
     ctx.require_provisioning_admin(args.workspace_obj, profile_name)
     payload = {"business": str(args.partner_business), "permitted_tasks": tasks}
-    ctx.graph.post(f"{asset_id}/agencies", payload, context="partner share asset")
+    ctx.graph.post(f"{asset_id}/agencies", payload, context="partner share asset", idempotent=True)
     return 0, ctx.result_envelope(
         "business partner share", True, "shared",
         data={"profile": profile_name, "asset": args.asset, "asset_id": asset_id,

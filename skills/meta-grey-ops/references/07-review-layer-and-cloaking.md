@@ -1,6 +1,6 @@
 # 07 — Review layer, cloaking, creative-classifier tricks
 
-Reviewed 2026-09-09. Session/IP → `01`. Agency/BM → `03`. API launch / re-moderation → `04`.
+Reviewed 2026-09-09; re-review, tr-1 and display-link rows updated 2026-09-29. Session/IP → `01`. Agency/BM → `03`. API launch / re-moderation → `04`.
 Policy taxonomy (clean lane) → `meta-ads/07`. Vendor tool configs and `🔺`/unverified hypotheses
 → `07a-vendor-recipes.md` — build nothing load-bearing on them without a `06`-style one-axis test.
 
@@ -53,7 +53,9 @@ vendors assume a second Chrome-class/residential path; don't bet on "review can'
 3. Re-review any time, including post-live.
 4. Official re-review triggers: targeting, creative, optimization, billing event. Field (`04`,
    2026-08, 45 ad sets): geo/device/age/placement/budget/bid/schedule did **not** change status —
-   review attaches to the **creative** ("can" vs "usually").
+   but field 2026-09-22 a targeting edit put a live ad back into review and it came back DISAPPROVED
+   (`19` §4). Not review-safe; only a rename (~15 s IN_PROCESS, 2026-09-29), budget, bid and schedule
+   have been seen not to re-review.
 5. **Click-to-Messenger**: welcome message reviewed as a thread-level gate — second gate, not a
    skip.
 6. **Instant Experience**: button URLs still crawlable; since Jun 2025 IX ≠ landing-page view.
@@ -120,7 +122,10 @@ affiliate link. Empty-HTML whites pass `facebookexternalhit` OG, fail human re-r
     disable; creative rejections surface as per-ad `DISAPPROVED`+`review_feedback`, never
     `account_status 2`. Content was still seen: any API create (ACTIVE or PAUSED) submits to
     review immediately (`04`). Don't rebuild creative/cloak/DLO for it. Ban detection → `03`;
-    automation-fingerprint clustering → `06`.
+    automation-fingerprint clustering → `06`. Counter-sequence, field 2026-09-29 (tr-1, ~$9 billed):
+    all 3 ads approved, then DISAPPROVED "Spam" within 1-2 min each, and the account went `status 2`,
+    `disable_reason 1` two minutes after the third; so per-ad rejections can precede an account-level
+    disable when the account itself is the target. Triage → `23`.
 11. Speed/sequence compression [practitioner, cpa.rip 2026-09-24, guide to *deliberately
     provoking* the restriction: create BM → spend limit + card → immediately create ads]. So
     "account → card → campaign inside an hour" is a known burn shape. Prevention: decouple steps in
@@ -152,8 +157,8 @@ maps RU "ЗРД" to an enum value — don't assert one.
 
 | Signature | What it is | Move |
 |---|---|---|
-| Ad rejected, account live | Creative/destination | Switch it off; new ad with a different creative/angle/PWA (`04`); rejected ad can't re-enable (2490468); never re-upload it into the same account (FIELD 2026-09-27) |
-| Approved → later reject | Official re-review | Isolate creative vs domain vs account |
+| Ad rejected, account live | Creative/destination | Switch it off; new ad with a different creative/angle/PWA (`04`); rejected ad can't re-enable (2490468); never re-upload it into the same account (FIELD 2026-09-27). Operator rule: on a disapproval do not edit or resubmit (no appeal-and-resubmit here) |
+| Approved → later reject | Official re-review | Isolate creative vs domain vs account. All ads "Spam" within minutes of approval, then a disable → `23` |
 | Ad account restricted | Asset-level | Agency/log stock: ask TL/agency "appeal or replace", don't appeal alone (`05`) |
 | User restricted from advertising | Other admins may still run | Freeze the persona |
 | BM/portfolio restriction | "Connected abusive assets" | Isolate; don't attach clean Pages |
@@ -186,7 +191,7 @@ across assets; new assets post-restriction.
 | Flexible/dynamic mix | 4-5 white sources + 1 grey | Live [MagicClick 2026]; dilution, not causal proof |
 | Branding toggle flip on stuck ad | ON↔OFF, no new creative | Unverified requeue 5-20min; if still fails (2490468) → new ad |
 | Instant Experience first hop | White IE canvas, CTA to money | Live; button URLs crawled; DLO off |
-| Display URL ≠ Website URL | e.g. news domain vs tracker | Official: must match; masking still at scale; 60-day block risk |
+| Display URL ≠ Website URL | e.g. news domain vs tracker | Official: must match; masking still at scale; 60-day block risk. Our rule: display link empty or the root domain, never a casino subdomain and never an unrelated domain |
 | CTM/WhatsApp/IG Direct | No web LP | Live LP-skip; greeting/creative still reviewed; DLO off |
 | Instant Forms | No offer LP; privacy-policy URL required | Live LP-skip; 2026 default buries Single-form (Website+Forms) — accidental website dest re-enables LP review |
 | Carousel: grey card1 + white 2-n | Disable card optimization | Live; per-card review |

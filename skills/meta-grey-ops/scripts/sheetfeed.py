@@ -316,6 +316,37 @@ def merged_upsert_rows(
     return out_header, out_rows
 
 
+def checked_set_item(header: list[str], rows: list[list[str]], product_id: str, field: str,
+                     value: str, target: str) -> dict[str, Any]:
+    """Validate `set` and return the one-field item to upsert; raise SheetError otherwise.
+
+    `set` edits ONE field of an EXISTING product. It used to go through upsert unchecked, so a
+    mistyped id appended a junk row holding only an id and one field, and a mistyped field
+    added a junk column. Refused now:
+      · an id that is not on the sheet (create products with `upsert`)
+      · a field that is neither a sheet column nor a known feed column
+      · a write that would introduce a validate_rows problem the sheet did not already have
+        (a problem that was already there does not block an unrelated fix)"""
+    product_id = str(product_id).strip()
+    if not product_id:
+        raise SheetError("set needs a non-empty --id")
+    if field == "id":
+        raise SheetError("set cannot change the id column: it is the row key")
+    if product_id not in indexed_sheet_ids(header, rows):
+        raise SheetError(f"unknown id {product_id!r}: it is not on the sheet, refusing to append a junk "
+                         "row. `set` edits an existing product; use `upsert` to add one.")
+    if field not in header and field not in REQUIRED + RECOMMENDED:
+        raise SheetError(f"unknown field {field!r}: not a sheet column and not a known feed column, "
+                         "refusing to add a junk column.")
+    item = {"id": product_id, field: value}
+    new_header, new_rows = merged_upsert_rows(header, rows, [item])
+    before = set(validate_rows(header, rows, target))
+    introduced = [p for p in validate_rows(new_header, new_rows, target) if p not in before]
+    if introduced:
+        raise SheetError("refusing to write an invalid row: " + "; ".join(introduced[:10]))
+    return item
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="sheetfeed", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sheet", required=True, help="spreadsheet URL or id")
@@ -330,10 +361,11 @@ def main() -> int:
     u = sub.add_parser("upsert", help="update rows by id / append new from CSV or JSON")
     u.add_argument("--file", required=True)
     u.add_argument("--target", choices=["mc", "meta", "both"], default="meta")
-    s = sub.add_parser("set", help="set one field on one product")
+    s = sub.add_parser("set", help="set one field on one EXISTING product (unknown id/field is refused)")
     s.add_argument("--id", required=True)
     s.add_argument("--field", required=True)
     s.add_argument("--value", required=True)
+    s.add_argument("--target", choices=["mc", "meta", "both"], default="meta")
     sub.add_parser("init-header", help="write the canonical header row into an empty tab")
     args = ap.parse_args()
     try:
@@ -362,12 +394,14 @@ def main() -> int:
                                   next_action=None if not problems else "Fix the rows, then fetch now in MC / Meta.")
         else:
             header, rows = sheet.read()
-            items = load_items(args.file) if args.command == "upsert" else [{"id": args.id, args.field: args.value}]
             if args.command == "upsert":
+                items = load_items(args.file)
                 prospective_header, prospective_rows = merged_upsert_rows(header, rows, items)
                 problems = validate_rows(prospective_header, prospective_rows, args.target)
                 if problems:
                     raise SheetError("refusing to write invalid rows: " + "; ".join(problems[:10]))
+            else:
+                items = [checked_set_item(header, rows, args.id, args.field, args.value, args.target)]
             counts = sheet.upsert(items, header, rows)
             result = envelope(args.command, True, "written", data=counts,
                               next_action="Merchant Center: Products → Data sources → Fetch now. Meta: Data sources → "
