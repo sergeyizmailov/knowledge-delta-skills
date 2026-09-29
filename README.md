@@ -48,19 +48,19 @@ loaded.
 > iOS 18 does NOT update `window.innerHeight` when address bar expands; `100vh` always
 > equals `lvh` on iOS Safari.
 
-— [`skills/responsive-adapter/references/platform-quirks.md`](skills/responsive-adapter/references/platform-quirks.md)
+— [`skills/frontend/responsive-adapter/references/platform-quirks.md`](skills/frontend/responsive-adapter/references/platform-quirks.md)
 
 > Defense: resolve DNS, check IP, disable redirects, re-check on every socket connect.
 > Production: dedicated egress proxy (Smokescreen, ssrfproxy) with connect-time IP
 > validation — application-layer checks are racy.
 
-— [`skills/secure-coding/ssrf.md`](skills/secure-coding/ssrf.md)
+— [`skills/security/secure-coding/ssrf.md`](skills/security/secure-coding/ssrf.md)
 
 > Daily CPL (for BUYING) = click-date spend (account-tz day) ÷ that same click-date
 > cohort's payout count. ... pairing click-date spend with conversion-date conversions
 > is the classic apples-to-oranges CPL.
 
-— [`skills/tracker-ops/references/03-metrics-and-math.md`](skills/tracker-ops/references/03-metrics-and-math.md)
+— [`skills/ads-core/tracker-ops/references/03-metrics-and-math.md`](skills/ads-core/tracker-ops/references/03-metrics-and-math.md)
 
 ## How they're built
 
@@ -72,10 +72,10 @@ method: [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 
 | Skill | Adds |
 |---|---|
-| [**knowledge-delta-skill-architect**](skills/knowledge-delta-skill-architect) | Writes, audits, and compresses skills against this method. |
-| [**meta-ads**](skills/meta-ads) | Meta ad accounts — ODAX objectives, budgets/bidding, pixel/CAPI, policy, error catalog. |
-| [**secure-coding**](skills/secure-coding) | Secure defaults across JS/Node/HTML/API/auth/DB/upload, plus AI-code vulnerability patterns. |
-| [**responsive-adapter**](skills/responsive-adapter) | Adapts an interface 320px→2560px+ without touching the design, then verifies it. |
+| [**knowledge-delta-skill-architect**](skills/engineering/knowledge-delta-skill-architect) | Writes, audits, and compresses skills against this method. |
+| [**meta-ads**](skills/meta/meta-ads) | Meta ad accounts — ODAX objectives, budgets/bidding, pixel/CAPI, policy, error catalog. |
+| [**secure-coding**](skills/security/secure-coding) | Secure defaults across JS/Node/HTML/API/auth/DB/upload, plus AI-code vulnerability patterns. |
+| [**responsive-adapter**](skills/frontend/responsive-adapter) | Adapts an interface 320px→2560px+ without touching the design, then verifies it. |
 
 Every skill, by domain: [`CATALOG.md`](CATALOG.md).
 
@@ -87,11 +87,16 @@ Copy the skill directories you want — nothing else to configure.
 git clone https://github.com/slilbudget/knowledge-delta-skills.git
 mkdir -p ~/.claude/skills
 cd knowledge-delta-skills/skills
-cp -R meta-ads ~/.claude/skills/                                                    # one skill
-cp -R meta-ads google-ads google-feed-ops tracker-ops measurement-experimentation-ops ~/.claude/skills/   # clean lane
-cp -R meta-grey-ops google-grey-ops senior-buyer-ops ~/.claude/skills/              # + grey lane (opt-in)
-cp -R tiktok-ads tiktok-ops ~/.claude/skills/                                       # TikTok (clean only, no grey lane)
+cp -R meta/meta-ads ~/.claude/skills/                                               # one skill
+cp -R meta/meta-ads google/google-ads google/google-feed-ops ads-core/tracker-ops ads-core/measurement-experimentation-ops ~/.claude/skills/   # clean lane
+cp -R meta/meta-grey-ops google/google-grey-ops ads-core/senior-buyer-ops ~/.claude/skills/              # + grey lane (opt-in)
+cp -R tiktok/tiktok-ads tiktok/tiktok-ops ~/.claude/skills/                         # TikTok (clean only, no grey lane)
+cp -R */* ~/.claude/skills/                                                         # everything (skill folders only)
 ```
+
+The category folders (`meta/`, `google/`, …) only organise this repository. Copy the
+skill directories as above — a category folder copied whole would sit two levels deep,
+where agent runtimes do not discover it.
 
 Personal-scope directory by runtime, verified against each vendor's docs on
 2026-08-29. Most also read a project-local equivalent.

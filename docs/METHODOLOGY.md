@@ -2,7 +2,7 @@
 
 How skills in this collection get built, what gets cut, and why. The full version of
 this method — including the class table, the value gate, and the cut rules — lives in
-[`skills/knowledge-delta-skill-architect`](../skills/knowledge-delta-skill-architect),
+[`skills/engineering/knowledge-delta-skill-architect`](../skills/engineering/knowledge-delta-skill-architect),
 which is both a skill in this repo and the process this whole collection follows.
 
 ## The knowledge delta

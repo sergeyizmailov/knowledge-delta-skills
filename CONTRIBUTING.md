@@ -5,7 +5,7 @@ skill: every rule in it has to name the failure it prevents or the capability it
 unlocks in a model that didn't have the skill. If you can't say what breaks without a
 line, cut the line before you open the PR. Full method:
 [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) and
-[`skills/knowledge-delta-skill-architect`](skills/knowledge-delta-skill-architect).
+[`skills/engineering/knowledge-delta-skill-architect`](skills/engineering/knowledge-delta-skill-architect).
 
 ## What gets rejected
 
@@ -41,16 +41,21 @@ cutting because a rerun showed the model already handles it.
 
 ## Anatomy of a skill
 
-Each skill is one directory directly under [`skills/`](skills/) — no category
-subfolders on disk (the README's domain grouping is a catalog view, not a filesystem
-layout):
+Each skill is one directory inside a category folder under [`skills/`](skills/)
+(`ads-core`, `engineering`, `frontend`, `google`, `meta`, `security`, `tiktok`). The
+categories exist for browsing the repository only: agent runtimes discover skills
+one level deep (`~/.claude/skills/<name>/SKILL.md`), so the install commands copy the
+skill directories, never a category folder:
 
 ```text
-skills/<name>/
+skills/<category>/<name>/
 ├── SKILL.md        # required — the playbook
 ├── references/     # optional — deep-dive docs loaded on demand
 └── scripts/        # optional — helper scripts the skill calls
 ```
+
+A new skill goes into an existing category, or a new category folder with a line for
+it in [`skills/README.md`](skills/README.md).
 
 `SKILL.md` starts with YAML frontmatter:
 
